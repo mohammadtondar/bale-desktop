@@ -16,6 +16,7 @@ def main():
     shutil.copytree(ROOT / 'bale_desktop', destination / 'bale_desktop',
                     dirs_exist_ok=True, ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copy2(ROOT / 'README.md', destination / 'README.md')
+    shutil.copy2(ROOT / 'LICENSE', destination / 'LICENSE')
     binary = Path.home() / '.local/bin/bale-desktop'
     binary.parent.mkdir(parents=True, exist_ok=True)
     # A Python launcher safely handles spaces and shell metacharacters in paths.

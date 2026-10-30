@@ -1,15 +1,17 @@
 # بله دسکتاپ برای لینوکس
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 ## دانلود
 
 آخرین بستهٔ آمادهٔ نصب اوبونتو / دبیان:
 
 ```sh
-wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.1_all.deb
-sudo apt install ./bale-desktop_0.2.1_all.deb
+wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.2_all.deb
+sudo apt install ./bale-desktop_0.2.2_all.deb
 ```
 
-نسخهٔ `0.2.1`، ۶۴ بیتی مستقل از معماری نیست ولی بستهٔ `all` است؛ وابستگی‌ها هنگام نصب با `apt` تأمین می‌شوند.
+نسخهٔ `0.2.2`، ۶۴ بیتی مستقل از معماری نیست ولی بستهٔ `all` است؛ وابستگی‌ها هنگام نصب با `apt` تأمین می‌شوند.
 
 کلاینت غیررسمی بله با GTK 3 و WebKitGTK 4.1، لوگوی اصلی بله و نوار بالای کوتاه و سبز. ورود و پیام‌رسانی در سایت اصلی بله انجام می‌شود.
 
@@ -44,7 +46,7 @@ python3 packaging/install_user.py
 ./run.sh --background
 ./run.sh --demo
 python3 packaging/build_deb.py
-sudo apt install ./dist/bale-desktop_0.2.1_all.deb
+sudo apt install ./dist/bale-desktop_0.2.2_all.deb
 ```
 
 حالت `--demo` پیش‌نمایش آفلاین است و به حساب متصل نمی‌شود. وضعیت اتصال در راهنمای شناور آیکون اتصال در نوار بالا قرار دارد.
@@ -64,3 +66,9 @@ python3 tests/gtk_smoke_test.py
 ```
 
 آزمون GTK سه نشست واقعی WebKit را با دادهٔ ساختگی اجرا می‌کند و جداسازی کوکی و localStorage، تغییر پروفایل، حفظ پس‌زمینه، مسیر اعلان و حذف پاسخ از اعلان را بررسی می‌کند. آزمون‌های گرافیکی به نشست دسکتاپ نیاز دارند و هیچ پیام واقعی ارسال نمی‌کنند.
+
+## گواهی‌نامه
+
+کد این پروژه تحت گواهی‌نامهٔ [MIT](LICENSE) منتشر شده است؛ می‌توانید استفاده، تغییر و بازتوزیع کنید، به شرط حفظ متن گواهی‌نامه. نرم‌افزار بدون هیچ ضمانتی ارائه می‌شود.
+
+نام و لوگوی بله متعلق به صاحبان آن است و تحت گواهی MIT این پروژه قرار نمی‌گیرد؛ لوگو فقط برای شناسایی سرویسی که این کلاینت غیررسمی به آن وصل می‌شود استفاده شده است. جزئیات در `packaging/copyright` آمده است.
