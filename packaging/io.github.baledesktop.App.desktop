@@ -1,0 +1,18 @@
+[Desktop Entry]
+Type=Application
+Name=Bale Desktop
+Name[fa]=بله دسکتاپ
+Comment=Bale Web with multiple accounts and background notifications
+Exec=bale-desktop
+Icon=io.github.baledesktop.App
+Terminal=false
+Categories=Network;InstantMessaging;
+StartupNotify=true
+StartupWMClass=BaleDesktop
+DBusActivatable=false
+Actions=Background;
+
+[Desktop Action Background]
+Name=Run in background
+Name[fa]=اجرا در پس‌زمینه
+Exec=bale-desktop --background

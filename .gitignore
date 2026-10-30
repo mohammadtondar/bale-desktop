@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+build/
+research/
+bale-web-snapshot.html
+.secrets/
+.secrets
+dist/
