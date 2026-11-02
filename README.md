@@ -7,11 +7,11 @@
 آخرین بستهٔ آمادهٔ نصب اوبونتو / دبیان:
 
 ```sh
-wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.2_all.deb
-sudo apt install ./bale-desktop_0.2.2_all.deb
+wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.3_all.deb
+sudo apt install ./bale-desktop_0.2.3_all.deb
 ```
 
-نسخهٔ `0.2.2`، ۶۴ بیتی مستقل از معماری نیست ولی بستهٔ `all` است؛ وابستگی‌ها هنگام نصب با `apt` تأمین می‌شوند.
+نسخهٔ `0.2.3`، ۶۴ بیتی مستقل از معماری نیست ولی بستهٔ `all` است؛ وابستگی‌ها هنگام نصب با `apt` تأمین می‌شوند.
 
 کلاینت غیررسمی بله با GTK 3 و WebKitGTK 4.1، لوگوی اصلی بله و نوار بالای کوتاه و سبز. ورود و پیام‌رسانی در سایت اصلی بله انجام می‌شود.
 
@@ -46,7 +46,7 @@ python3 packaging/install_user.py
 ./run.sh --background
 ./run.sh --demo
 python3 packaging/build_deb.py
-sudo apt install ./dist/bale-desktop_0.2.2_all.deb
+sudo apt install ./dist/bale-desktop_0.2.3_all.deb
 ```
 
 حالت `--demo` پیش‌نمایش آفلاین است و به حساب متصل نمی‌شود. وضعیت اتصال در راهنمای شناور آیکون اتصال در نوار بالا قرار دارد.
@@ -63,9 +63,14 @@ sudo apt install ./dist/bale-desktop_0.2.2_all.deb
 python3 -m unittest discover -s tests -v
 python3 tests/webkit_bridge_test.py
 python3 tests/gtk_smoke_test.py
+python3 tests/download_test.py
 ```
 
 آزمون GTK سه نشست واقعی WebKit را با دادهٔ ساختگی اجرا می‌کند و جداسازی کوکی و localStorage، تغییر پروفایل، حفظ پس‌زمینه، مسیر اعلان و حذف پاسخ از اعلان را بررسی می‌کند. آزمون‌های گرافیکی به نشست دسکتاپ نیاز دارند و هیچ پیام واقعی ارسال نمی‌کنند.
+
+## دانلود فایل‌ها
+
+فایل‌های دریافتی از بله بدون باز کردن پنجرهٔ ذخیره دانلود می‌شوند و در پوشهٔ `Downloads/bale` (محل واقعی پوشهٔ دانلود کاربر) قرار می‌گیرند. اگر فایل هم‌نام قبلی وجود داشته باشد، نسخهٔ جدید با شماره ذخیره می‌شود و فایل قبلی بازنویسی نمی‌شود. از منو نیز می‌توان «باز کردن پوشهٔ دانلودها» را انتخاب کرد.
 
 ## گواهی‌نامه
 

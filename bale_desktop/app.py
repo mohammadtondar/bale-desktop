@@ -50,6 +50,15 @@ def trusted_url(uri):
         return False
 
 
+class DownloadJob:
+    """Track one in-flight download so duplicate signals are ignored."""
+
+    def __init__(self, path):
+        self.path = path
+        self.finished = False
+        self.signals = []
+
+
 class BaleApplication(Gtk.Application):
     def __init__(self, background=False, demo=False):
         super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
@@ -57,6 +66,7 @@ class BaleApplication(Gtk.Application):
         self.window = self.view = None
         self.sessions = {}
         self.notification_ids = {}
+        self.downloads = set()
         self.held = False
 
     def do_startup(self):
@@ -74,6 +84,7 @@ class BaleApplication(Gtk.Application):
             ('add-profile', lambda *_: self.profile_dialog(), None),
             ('rename-profile', lambda *_: self.profile_dialog(rename=True), None),
             ('open-profile', self.notification_action, GLib.VariantType.new('s')),
+            ('show-downloads', lambda *_: self.open_downloads(), None),
         ]:
             action = Gio.SimpleAction.new(name, parameter)
             action.connect('activate', handler)
@@ -131,6 +142,7 @@ class BaleApplication(Gtk.Application):
         menu = Gio.Menu()
         menu.append('افزودن حساب', 'app.add-profile')
         menu.append('تغییر نام پروفایل', 'app.rename-profile')
+        menu.append('باز کردن پوشهٔ دانلودها', 'app.show-downloads')
         menu.append('خروج کامل', 'app.quit')
         menu_button = Gtk.MenuButton()
         menu_button.set_image(Gtk.Image.new_from_icon_name('open-menu-symbolic', Gtk.IconSize.MENU))
@@ -391,26 +403,102 @@ class BaleApplication(Gtk.Application):
             request.deny()
         return True
 
+    def download_directory(self):
+        # Honour XDG_DOWNLOAD_DIR (the user's localized Downloads folder).
+        config = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
+        directory = Path(config) if config else Path.home() / 'Downloads'
+        directory = directory / 'bale'
+        try:
+            directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError as error:
+            self.show_download_error('پوشهٔ دانلود ساخته نشد: %s' % error)
+            return directory if directory.is_dir() else Path.home()
+        return directory
+
+    def unique_download_path(self, directory, suggested):
+        name = Path(suggested).name or 'bale-file'
+        path = directory / name
+        if not path.exists():
+            return path
+        stem, suffix = path.stem, path.suffix
+        for number in range(1, 10000):
+            candidate = directory / f'{stem} ({number}){suffix}'
+            if not candidate.exists():
+                return candidate
+        raise OSError('نام فایل تکراری است')
+
+    def show_download_error(self, message):
+        dialog = Gtk.MessageDialog(transient_for=self.window, modal=True,
+            message_type=Gtk.MessageType.ERROR, buttons=Gtk.ButtonsType.OK, text=message)
+        dialog.run()
+        dialog.destroy()
+
     def download_started(self, context, download):
-        def choose_destination(download, suggested):
-            dialog = Gtk.FileChooserDialog(title="ذخیرهٔ فایل بله", parent=self.window, action=Gtk.FileChooserAction.SAVE)
-            dialog.add_buttons("انصراف", Gtk.ResponseType.CANCEL, "ذخیره", Gtk.ResponseType.ACCEPT)
-            dialog.set_do_overwrite_confirmation(True)
-            dialog.set_current_name(Path(suggested).name)
-            if dialog.run() == Gtk.ResponseType.ACCEPT:
-                download.set_allow_overwrite(True)
-                download.set_destination(Path(dialog.get_filename()).as_uri())
-            else:
-                download.cancel()
-            dialog.destroy()
+        response = download.get_response()
+        suggested = response.get_suggested_filename() if response else None
+        if not suggested:
+            suggested = Path(urlsplit(download.get_request().get_uri()).path).name or 'bale-file'
+        directory = self.download_directory()
+        try:
+            destination = self.unique_download_path(directory, suggested)
+        except OSError as error:
+            self.show_download_error('نام فایل دانلود معتبر نیست: %s' % error)
+            download.cancel()
+            return
+        state = DownloadJob(destination)
+
+        def decide(download, filename):
+            download.set_allow_overwrite(False)
+            download.set_destination(destination.as_uri())
             return True
-        download.connect("decide-destination", choose_destination)
+
+        def finish(download):
+            if state.finished:
+                return
+            state.finished = True
+            self.downloads.discard(state)
+            for signal_id in state.signals:
+                download.disconnect(signal_id)
+            self.show_download_done(destination)
+
+        def fail(download, error):
+            if state.finished:
+                return
+            state.finished = True
+            self.downloads.discard(state)
+            for signal_id in state.signals:
+                download.disconnect(signal_id)
+            self.show_download_error('دانلود کامل نشد: %s' % error.message)
+
+        state.signals = [download.connect('decide-destination', decide),
+                         download.connect('finished', finish),
+                         download.connect('failed', fail)]
+        self.downloads.add(state)
+        self.status.set_tooltip_text('در حال دانلود در %s' % directory)
+
+    def show_download_done(self, path):
+        self.status.set_tooltip_text('دانلود شد: %s' % path)
+        note = Gio.Notification.new('فایل بله دانلود شد')
+        note.set_body(path.name)
+        note.set_icon(Gio.ThemedIcon.new('folder-download-symbolic'))
+        note.set_default_action('app.show-downloads')
+        self.send_notification('download-complete', note)
+
+    def open_downloads(self):
+        directory = self.download_directory()
+        try:
+            Gio.AppInfo.launch_default_for_uri(directory.as_uri(), None)
+        except GLib.Error as error:
+            self.show_download_error('پوشهٔ دانلود باز نشد: %s' % error)
 
     def quit_signal(self):
         self.quit()
         return False
 
     def do_shutdown(self):
+        for state in list(self.downloads):
+            state.finished = True
+        self.downloads.clear()
         for key in self.notification_ids:
             self.withdraw_notification(key)
         if self.held:
