@@ -53,6 +53,7 @@ class DownloadApp(BaleApplication):
         self.set_application_id('io.github.baledesktop.DownloadTest')
         self.notes = []
         self.completed = []
+        self.toast_shown = []
 
     def send_notification(self, key, notification):
         self.notes.append((key, notification))
@@ -79,6 +80,8 @@ class DownloadApp(BaleApplication):
             assert [k for k, _ in self.notes] == ['download-complete'], self.notes
             assert not self.downloads, 'Download state must be cleaned up'
             assert self.completed == [str(target)], self.completed
+            assert self.toast_shown, 'Completion toast must be shown'
+            assert self.toast_shown[0] == 'ذخیره شد · sample.txt', self.toast_shown
             # Second download must not overwrite; it gets a numeric suffix.
             self.again = False
             self.view.download_uri('http://127.0.0.1:%d/sample.txt' % port)
@@ -107,6 +110,8 @@ class DownloadApp(BaleApplication):
     def show_download_done(self, path):
         self.completed.append(str(path))
         super().show_download_done(path)
+        if self.toast.get_visible():
+            self.toast_shown.append(self.toast_label.get_text())
 
 app = DownloadApp()
 GLib.timeout_add_seconds(30, lambda: (errors.append('download timed out'), app.quit(), False)[-1])

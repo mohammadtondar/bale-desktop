@@ -56,7 +56,8 @@ class SmokeApplication(BaleApplication):
             logo = self.header_logo.get_pixbuf()
             assert logo and logo.get_width() == 22 and logo.get_height() == 22, 'Installed logo must be scaled to 22px'
             assert self.header.get_allocated_height() <= 44, 'Header height: ' + str(self.header.get_allocated_height()) + '; children: ' + str([(type(w).__name__, w.get_allocated_height(), w.get_preferred_height()) for w in self.header.get_children()])
-            assert self.window.get_child() == self.stack, 'No extra status strip'
+            assert isinstance(self.window.get_child(), __import__('gi.repository', fromlist=['Gtk']).Gtk.Overlay), 'Overlay hosts the compact toast'
+            assert self.window.get_child().get_child() == self.stack, 'No extra status strip'
             assert not self.lookup_action('reply'), 'Reply action completely removed'
             managers = [s['data'] for s in self.sessions.values()]
             paths = [m.get_base_data_directory() for m in managers]

@@ -38,6 +38,17 @@ headerbar.bale-header {
 }
 .bale-header .title { font-size: 14px; font-weight: bold; }
 .bale-header .subtitle { font-size: 0; }
+.bale-toast {
+    background-color: rgba(0, 40, 33, 0.92); color: white;
+    border-radius: 10px; padding: 6px 10px; margin: 12px;
+}
+.bale-toast label { color: white; font-size: 12px; }
+.bale-toast button {
+    background-image: none; background-color: transparent; color: #7ff0d2;
+    border: none; box-shadow: none; min-height: 20px; padding: 0 4px;
+    font-size: 12px; font-weight: bold;
+}
+.bale-toast button:hover { color: white; }
 """
 
 
@@ -151,7 +162,14 @@ class BaleApplication(Gtk.Application):
         self.window.set_titlebar(self.header)
         self.stack = Gtk.Stack()
         self.stack.set_transition_type(Gtk.StackTransitionType.NONE)
-        self.window.add(self.stack)
+        self.overlay = Gtk.Overlay()
+        self.overlay.add(self.stack)
+        self.toast = self.build_toast()
+        self.overlay.add_overlay(self.toast)
+        self.toast.set_halign(Gtk.Align.END)
+        self.toast.set_valign(Gtk.Align.END)
+        self.window.add(self.overlay)
+        self.toast_revision = 0
         for profile in self.profiles.items:
             self.ensure_session(profile['id'])
         self.refresh_profiles()
@@ -403,6 +421,42 @@ class BaleApplication(Gtk.Application):
             request.deny()
         return True
 
+    def build_toast(self):
+        toast = Gtk.Box(spacing=8)
+        toast.get_style_context().add_class('bale-toast')
+        toast.set_direction(Gtk.TextDirection.RTL)
+        toast.set_no_show_all(True)
+        self.toast_label = Gtk.Label(xalign=0)
+        self.toast_label.set_ellipsize(3)
+        self.toast_label.set_max_width_chars(40)
+        toast.pack_start(self.toast_label, True, True, 0)
+        button = Gtk.Button(label='نمایش')
+        button.set_relief(Gtk.ReliefStyle.NONE)
+        button.set_tooltip_text('باز کردن پوشهٔ دانلودها')
+        button.connect('clicked', lambda *_: self.open_downloads())
+        toast.pack_end(button, False, False, 0)
+        return toast
+
+    def show_toast(self, message, seconds=6):
+        """Small in-window notice; reuses one widget and resets its timer."""
+        self.toast_revision += 1
+        revision = self.toast_revision
+        self.toast_label.set_text(message)
+        # no-show-all keeps the toast out of window.show_all(); show it explicitly.
+        self.toast.show()
+        self.toast.show_all()
+
+        def expire():
+            if revision == self.toast_revision:
+                self.toast.hide()
+            return False
+
+        GLib.timeout_add_seconds(seconds, expire)
+
+    def hide_toast(self):
+        self.toast_revision += 1
+        self.toast.hide()
+
     def download_directory(self):
         # Honour XDG_DOWNLOAD_DIR (the user's localized Downloads folder).
         config = GLib.get_user_special_dir(GLib.UserDirectory.DIRECTORY_DOWNLOAD)
@@ -474,10 +528,11 @@ class BaleApplication(Gtk.Application):
                          download.connect('finished', finish),
                          download.connect('failed', fail)]
         self.downloads.add(state)
-        self.status.set_tooltip_text('در حال دانلود در %s' % directory)
+        self.show_toast('در حال دانلود · %s' % destination.name, 4)
 
     def show_download_done(self, path):
         self.status.set_tooltip_text('دانلود شد: %s' % path)
+        self.show_toast('ذخیره شد · %s' % path.name)
         note = Gio.Notification.new('فایل بله دانلود شد')
         note.set_body(path.name)
         note.set_icon(Gio.ThemedIcon.new('folder-download-symbolic'))
