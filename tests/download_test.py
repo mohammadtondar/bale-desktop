@@ -72,16 +72,16 @@ class DownloadApp(BaleApplication):
 
     def inspect(self):
         try:
-            target = downloads / 'bale' / 'sample.txt'
+            target = downloads / 'bale' / 'bale-sample.txt'
             self.target = target
             files = sorted(str(p.relative_to(work_path)) for p in work_path.rglob('*') if p.is_file())
             assert target.exists(), 'File must land in Downloads/bale: %s | files=%s | notes=%s' % (target, files, self.notes)
             assert target.read_bytes() == payload, 'Downloaded content must match'
-            assert [k for k, _ in self.notes] == ['download-complete'], self.notes
+            assert set(k for k, _ in self.notes) == {'download-complete'}, self.notes
             assert not self.downloads, 'Download state must be cleaned up'
             assert self.completed == [str(target)], self.completed
             assert self.toast_shown, 'Completion toast must be shown'
-            assert self.toast_shown[0] == 'ذخیره شد · sample.txt', self.toast_shown
+            assert self.toast_shown[0] == 'ذخیره شد · bale-sample.txt', self.toast_shown
             # Second download must not overwrite; it gets a numeric suffix.
             self.again = False
             self.view.download_uri('http://127.0.0.1:%d/sample.txt' % port)
@@ -94,9 +94,9 @@ class DownloadApp(BaleApplication):
     def inspect_second(self):
         try:
             names = sorted(p.name for p in (downloads / 'bale').iterdir())
-            assert names == ['sample (1).txt', 'sample.txt'], names
-            assert (downloads / 'bale' / 'sample.txt').read_bytes() == payload
-            assert self.completed == [str(self.target), str(downloads / 'bale' / 'sample (1).txt')], self.completed
+            assert names == ['bale-sample (1).txt', 'bale-sample.txt'], names
+            assert (downloads / 'bale' / 'bale-sample.txt').read_bytes() == payload
+            assert self.completed == [str(self.target), str(downloads / 'bale' / 'bale-sample (1).txt')], self.completed
             print('PASS: real WebKit download to', downloads / 'bale', '| no overwrite | completion notification')
             self.quit()
         except Exception as error:

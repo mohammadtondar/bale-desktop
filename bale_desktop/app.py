@@ -52,21 +52,53 @@ headerbar.bale-header {
 """
 
 
-def trusted_url(uri):
+def _url_is(uri, hosts):
     try:
         url = urlsplit(uri)
-        return (url.scheme == "https" and url.hostname == "web.bale.ai"
+        return (url.scheme == "https" and url.hostname in hosts
                 and url.port in (None, 443) and not url.username and not url.password)
     except ValueError:
         return False
 
 
+def trusted_url(uri):
+    """Origins allowed to render the app and receive the injected bridge."""
+    return _url_is(uri, {"web.bale.ai"})
+
+
+def navigation_allowed(uri):
+    """Origins Bale itself renders or generates without asking the browser."""
+    if uri.startswith(("blob:", "data:application/octet-stream")):
+        return True
+    return _url_is(uri, {"web.bale.ai", "assets.bale.ai"})
+
+
+RENDERABLE_MIME_PREFIXES = ("text/", "image/", "audio/", "video/")
+RENDERABLE_MIME_TYPES = {"application/pdf", "application/xhtml+xml"}
+
+
+def response_is_download(response):
+    """True when a response is a file to save, not a page to render."""
+    if response is None:
+        return False
+    if response.get_suggested_filename():
+        return True
+    mime = (response.get_mime_type() or "").split(";")[0].strip().lower()
+    if not mime:
+        return False
+    if mime in RENDERABLE_MIME_TYPES or mime.startswith(RENDERABLE_MIME_PREFIXES):
+        return False
+    return True
+
+
 class DownloadJob:
     """Track one in-flight download so duplicate signals are ignored."""
 
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, download):
+        self.download = download
+        self.path = None
         self.finished = False
+        self.toasted = False
         self.signals = []
 
 
@@ -78,6 +110,8 @@ class BaleApplication(Gtk.Application):
         self.sessions = {}
         self.notification_ids = {}
         self.downloads = set()
+        self.download_names = {}
+        self.pending_navigations = set()
         self.held = False
 
     def do_startup(self):
@@ -335,6 +369,12 @@ class BaleApplication(Gtk.Application):
                 session['ready'] = True
                 self.set_status(session['view'], 'متصل')
                 self.update_background()
+            elif item['kind'] == 'download-name':
+                uri, name = item.get('uri'), item.get('name')
+                if isinstance(uri, str) and isinstance(name, str) and name.strip():
+                    self.download_names[uri] = Path(name).name
+                    if len(self.download_names) > 100:
+                        del self.download_names[next(iter(self.download_names))]
             elif item['kind'] == 'adapter-error':
                 session['ready'] = False
                 self.set_status(session['view'], item.get('error', 'دریافت اعلان نیاز به بررسی دارد.'))
@@ -389,13 +429,43 @@ class BaleApplication(Gtk.Application):
     def process_terminated(self, view, *_):
         self.sessions[self.profile_for_view(view)]['ready'] = False
         self.set_status(view, 'موتور وب متوقف شد؛ تازه‌سازی کنید.')
+
     def navigation_policy(self, view, decision, kind):
-        if kind in (WebKit2.PolicyDecisionType.NAVIGATION_ACTION, WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION):
+        if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
             action = decision.get_navigation_action()
             uri = action.get_request().get_uri()
+            scheme = urlsplit(uri).scheme
             if self.demo and uri == "about:blank":
                 return False
-            if not trusted_url(uri):
+            if action.is_user_gesture() and scheme in ("mailto", "tel"):
+                decision.ignore()
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+                return True
+            # Bale file downloads arrive as a plain navigation action, including
+            # blob: URLs, so defer user-initiated web navigations to the response
+            # stage where downloads can be told apart from ordinary pages.
+            if navigation_allowed(uri) or scheme == "about":
+                return False
+            if action.is_user_gesture() and scheme in ("https", "http"):
+                self.pending_navigations.add(uri)
+                return False
+            decision.ignore()
+            return True
+        if kind == WebKit2.PolicyDecisionType.RESPONSE:
+            uri = decision.get_request().get_uri()
+            response = decision.get_response() if hasattr(decision, 'get_response') else None
+            if trusted_url(uri) or uri.startswith(("blob:", "data:")) or response_is_download(response):
+                return False
+            decision.ignore()
+            started_by_gesture = uri in self.pending_navigations
+            self.pending_navigations.discard(uri)
+            if started_by_gesture and urlsplit(uri).scheme in ("https", "http"):
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+            return True
+        if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
+            action = decision.get_navigation_action()
+            uri = action.get_request().get_uri()
+            if not navigation_allowed(uri):
                 decision.ignore()
                 if action.is_user_gesture() and urlsplit(uri).scheme in ("https", "http", "mailto", "tel"):
                     Gio.AppInfo.launch_default_for_uri(uri, None)
@@ -488,22 +558,31 @@ class BaleApplication(Gtk.Application):
         dialog.destroy()
 
     def download_started(self, context, download):
-        response = download.get_response()
-        suggested = response.get_suggested_filename() if response else None
-        if not suggested:
-            suggested = Path(urlsplit(download.get_request().get_uri()).path).name or 'bale-file'
-        directory = self.download_directory()
-        try:
-            destination = self.unique_download_path(directory, suggested)
-        except OSError as error:
-            self.show_download_error('نام فایل دانلود معتبر نیست: %s' % error)
-            download.cancel()
+        # WebKitGTK can emit download-started more than once for one transfer.
+        if any(state.download is download for state in self.downloads):
             return
-        state = DownloadJob(destination)
+        request_uri = download.get_request().get_uri()
+        bridged_name = self.download_names.pop(request_uri, None)
+        state = DownloadJob(download)
 
         def decide(download, filename):
+            # WebKit knows the real name here (Content-Disposition or the <a download>
+            # attribute), which is more accurate than download-started's fallback.
+            suggested = bridged_name or filename or self._response_filename(download)
+            if not suggested:
+                suggested = Path(urlsplit(request_uri).path).name or 'bale-file'
+            directory = self.download_directory()
+            try:
+                destination = self.unique_download_path(directory, suggested)
+            except OSError as error:
+                self.show_download_error('نام فایل دانلود معتبر نیست: %s' % error)
+                return False
+            state.path = destination
             download.set_allow_overwrite(False)
             download.set_destination(destination.as_uri())
+            if not state.toasted:
+                state.toasted = True
+                self.show_toast('در حال دانلود · %s' % destination.name, 4)
             return True
 
         def finish(download):
@@ -513,7 +592,7 @@ class BaleApplication(Gtk.Application):
             self.downloads.discard(state)
             for signal_id in state.signals:
                 download.disconnect(signal_id)
-            self.show_download_done(destination)
+            self.show_download_done(state.path or self.download_directory())
 
         def fail(download, error):
             if state.finished:
@@ -528,7 +607,11 @@ class BaleApplication(Gtk.Application):
                          download.connect('finished', finish),
                          download.connect('failed', fail)]
         self.downloads.add(state)
-        self.show_toast('در حال دانلود · %s' % destination.name, 4)
+
+    @staticmethod
+    def _response_filename(download):
+        response = download.get_response()
+        return response.get_suggested_filename() if response else None
 
     def show_download_done(self, path):
         self.status.set_tooltip_text('دانلود شد: %s' % path)

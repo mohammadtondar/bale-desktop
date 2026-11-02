@@ -21,7 +21,7 @@ var root = {__reactContainer$test: {memoizedProps: {value: {
 }}}};
 if (typeof document === 'undefined') {
   globalThis.location = {origin: 'https://web.bale.ai'};
-  globalThis.document = {getElementById: () => root, scripts: [{src: 'https://web.bale.ai/index.fe3fa18088.js'}], hasFocus: () => false};
+  globalThis.document = {getElementById: () => root, scripts: [{src: 'https://web.bale.ai/index.8d8cd3fd92.js'}], hasFocus: () => false};
   globalThis.addEventListener = () => {};
   globalThis.webkit = {messageHandlers: {bale: {postMessage: s => reports.push(JSON.parse(s))}}};
   globalThis.crypto = {getRandomValues: a => {a[0] = 123456; return a;}};
@@ -34,7 +34,7 @@ globalThis.setInterval = fn => {tick = fn; return 1;};
 globalThis.clearInterval = () => {};
 var modules = {
   11934: {i: {NewMessages: 'new'}},
-  94215: {zw: s => s.current}, 41219: {H4: s => s.owner},
+  94215: {zw: s => s.current}, 49655: {H4: s => s.owner},
   55468: {t2: s => s.settings}, 45387: {jq: p => ({...p, accessHash: 'private'})},
   25023: {Lq: s => s.enabled, nJ: s => s.unmuted, qV: s => s.preview},
   6044: {qM: (s,p) => 'Chat ' + p.id},
