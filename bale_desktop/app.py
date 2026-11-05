@@ -13,6 +13,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
+from .national import NationalProxy
 from .profiles import ProfileStore
 
 APP_ID = "io.github.baledesktop.App"
@@ -35,6 +36,10 @@ headerbar.bale-header {
 .bale-header combobox arrow { min-height: 12px; min-width: 12px; }
 .bale-header button:hover, .bale-header button:checked {
     background-color: rgba(255,255,255,0.18);
+}
+.bale-header button.national { font-size: 12px; font-weight: bold; padding: 2px 7px; }
+.bale-header button.national:checked {
+    background-color: white; color: #00876f; border-radius: 6px;
 }
 .bale-header .title { font-size: 14px; font-weight: bold; }
 .bale-header .subtitle { font-size: 0; }
@@ -125,6 +130,7 @@ class BaleApplication(Gtk.Application):
         self.pending_navigations = set()
         self.bridge_source = None
         self.held = False
+        self.national = None
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -184,6 +190,14 @@ class BaleApplication(Gtk.Application):
         self.header.pack_start(reload_button)
         self.status = Gtk.Image.new_from_icon_name('network-transmit-receive-symbolic', Gtk.IconSize.MENU)
         self.header.pack_start(self.status)
+        self.national_button = Gtk.ToggleButton(label='اینترنت ملی')
+        self.national_button.get_style_context().add_class('national')
+        self.national_button.set_tooltip_text(
+            'اینترنت ملی: اتصال مستقیم بله با DNS ایران، بدون عبور از پروکسی فیلترشکن.\n'
+            'وقتی فیلترشکن بله را مختل می‌کند روشن کنید.')
+        self.national_button.set_active(self.load_settings().get('national') is True)
+        self.national_button.connect('toggled', self.national_toggled)
+        self.header.pack_start(self.national_button)
         self.profile_picker = Gtk.ComboBoxText()
         self.profile_picker.set_tooltip_text('تغییر پروفایل')
         self.profile_picker.set_direction(Gtk.TextDirection.RTL)
@@ -293,6 +307,7 @@ class BaleApplication(Gtk.Application):
         for directory in (base, cache):
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         data = WebKit2.WebsiteDataManager(base_data_directory=str(base), base_cache_directory=str(cache))
+        self.apply_network(data)
         context = WebKit2.WebContext(website_data_manager=data, memory_pressure_settings=memory_settings())
         # One single-page app per profile: no browser-sized memory cache needed.
         context.set_cache_model(WebKit2.CacheModel.DOCUMENT_BROWSER)
@@ -532,9 +547,10 @@ class BaleApplication(Gtk.Application):
         button.set_tooltip_text('باز کردن پوشهٔ دانلودها')
         button.connect('clicked', lambda *_: self.open_downloads())
         toast.pack_end(button, False, False, 0)
+        self.toast_button = button
         return toast
 
-    def show_toast(self, message, seconds=6):
+    def show_toast(self, message, seconds=6, downloads=True):
         """Small in-window notice; reuses one widget and resets its timer."""
         self.toast_revision += 1
         revision = self.toast_revision
@@ -542,6 +558,7 @@ class BaleApplication(Gtk.Application):
         # no-show-all keeps the toast out of window.show_all(); show it explicitly.
         self.toast.show()
         self.toast.show_all()
+        self.toast_button.set_visible(downloads)
 
         def expire():
             if revision == self.toast_revision:
@@ -660,7 +677,57 @@ class BaleApplication(Gtk.Application):
         self.quit()
         return False
 
+    # ---------- اینترنت ملی ----------
+
+    def settings_path(self):
+        return Path(GLib.get_user_data_dir()) / 'bale-desktop' / 'settings.json'
+
+    def load_settings(self):
+        try:
+            value = json.loads(self.settings_path().read_text())
+            return value if isinstance(value, dict) else {}
+        except (OSError, ValueError):
+            return {}
+
+    def save_settings(self, **changes):
+        settings = self.load_settings()
+        settings.update(changes)
+        path = self.settings_path()
+        temporary = path.with_suffix('.json.tmp')
+        temporary.write_text(json.dumps(settings))
+        temporary.replace(path)
+
+    def national_enabled(self):
+        button = getattr(self, 'national_button', None)
+        return button.get_active() if button else self.load_settings().get('national') is True
+
+    def apply_network(self, data):
+        if self.national_enabled():
+            if self.national is None:
+                self.national = NationalProxy()
+            data.set_network_proxy_settings(WebKit2.NetworkProxyMode.CUSTOM,
+                                            WebKit2.NetworkProxySettings.new(self.national.url, None))
+        else:
+            # Back to the system settings, including a VPN's proxy.
+            data.set_network_proxy_settings(WebKit2.NetworkProxyMode.DEFAULT, None)
+
+    def national_toggled(self, button):
+        enabled = button.get_active()
+        try:
+            self.save_settings(national=enabled)
+        except OSError:
+            pass  # still applies for this run
+        for session in self.sessions.values():
+            self.apply_network(session['data'])
+            # Open connections (the message socket) keep their old route; reconnect.
+            if not self.demo:
+                session['view'].reload()
+        self.show_toast('اینترنت ملی روشن شد · اتصال مستقیم با DNS ایران' if enabled
+                        else 'اینترنت ملی خاموش شد · اتصال از تنظیمات سیستم', 4, downloads=False)
+
     def do_shutdown(self):
+        if self.national is not None:
+            self.national.close()
         for state in list(self.downloads):
             state.finished = True
         self.downloads.clear()

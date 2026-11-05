@@ -38,6 +38,9 @@ namespace BaleDesktop
         readonly Queue<string> notifiedOrder = new Queue<string>();
         readonly string bridge;
         Task<CoreWebView2Environment> environment;
+        readonly bool nationalOn;
+        NationalProxy national;
+        ToolStripButton nationalButton;
 
         readonly ToolStrip header = new ToolStrip();
         readonly ToolStripComboBox picker = new ToolStripComboBox();
@@ -45,6 +48,7 @@ namespace BaleDesktop
         readonly Panel host = new Panel { Dock = DockStyle.Fill };
         readonly Panel toast = new Panel();
         readonly Label toastText = new Label();
+        LinkLabel toastLink;
         readonly Timer toastTimer = new Timer();
         readonly NotifyIcon tray = new NotifyIcon();
         Action balloonClick;
@@ -55,6 +59,7 @@ namespace BaleDesktop
             startBackground = background;
             dataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BaleDesktop");
             profiles = new ProfileStore(dataRoot);
+            nationalOn = LoadSettings().TryGetValue("national", out var value) && value is bool on && on;
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("bridge.js"))
             using (var reader = new StreamReader(stream))
                 bridge = reader.ReadToEnd();
@@ -96,6 +101,16 @@ namespace BaleDesktop
             var logo = new ToolStripLabel("بله") { Font = new Font(Font.FontFamily, 10f, FontStyle.Bold), Image = Icon.ToBitmap() };
             logo.ImageScaling = ToolStripItemImageScaling.SizeToFit;
             var reload = Button("⟳", "تازه‌سازی حساب فعلی (F5)", (s, e) => ReloadActive());
+            nationalButton = new ToolStripButton("اینترنت ملی")
+            {
+                CheckOnClick = true,
+                Checked = nationalOn,
+                ForeColor = nationalOn ? Green : Color.White,
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f, FontStyle.Bold),
+                ToolTipText = "اینترنت ملی: اتصال مستقیم بله با DNS ایران، بدون عبور از پروکسی فیلترشکن.\n"
+                              + "وقتی فیلترشکن بله را مختل می‌کند روشن کنید.",
+            };
+            nationalButton.CheckedChanged += (s, e) => NationalToggled();
             status.ToolTipText = "در حال اتصال…";
             status.ForeColor = Color.FromArgb(255, 235, 150);
 
@@ -118,7 +133,7 @@ namespace BaleDesktop
             menu.DropDownItems.Add(new ToolStripSeparator());
             menu.DropDownItems.Add(new ToolStripMenuItem("خروج کامل", null, (s, e) => Quit()) { ShortcutKeys = Keys.Control | Keys.Q });
 
-            header.Items.AddRange(new ToolStripItem[] { logo, reload, status, menu, picker, add });
+            header.Items.AddRange(new ToolStripItem[] { logo, reload, status, nationalButton, menu, picker, add });
         }
 
         static ToolStripButton Button(string text, string tip, EventHandler click)
@@ -138,6 +153,11 @@ namespace BaleDesktop
             }
             protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
             {
+                if (e.Item is ToolStripButton toggle && toggle.Checked)
+                {
+                    e.Graphics.FillRectangle(Brushes.White, new Rectangle(1, 2, e.Item.Width - 2, e.Item.Height - 4));
+                    return;
+                }
                 if (!e.Item.Selected && !e.Item.Pressed) return;
                 using (var brush = new SolidBrush(Color.FromArgb(46, 255, 255, 255)))
                     e.Graphics.FillRectangle(brush, new Rectangle(Point.Empty, e.Item.Size));
@@ -319,8 +339,62 @@ namespace BaleDesktop
         {
             // One browser process serves every account; each account is a separate
             // WebView2 profile with its own cookies, storage and cache.
-            return environment ?? (environment = CoreWebView2Environment.CreateAsync(
-                null, Path.Combine(dataRoot, "WebView2"), new CoreWebView2EnvironmentOptions { Language = "fa" }));
+            if (environment != null) return environment;
+            var options = new CoreWebView2EnvironmentOptions { Language = "fa" };
+            if (nationalOn)
+            {
+                // The browser's proxy is fixed at start, so toggling restarts the app.
+                national = new NationalProxy();
+                options.AdditionalBrowserArguments = "--proxy-server=http://127.0.0.1:" + national.Port;
+            }
+            return environment = CoreWebView2Environment.CreateAsync(null, Path.Combine(dataRoot, "WebView2"), options);
+        }
+
+        // ---------- اینترنت ملی ----------
+
+        Dictionary<string, object> LoadSettings()
+        {
+            try
+            {
+                return new JavaScriptSerializer().Deserialize<Dictionary<string, object>>(
+                    File.ReadAllText(Path.Combine(dataRoot, "settings.json"))) ?? new Dictionary<string, object>();
+            }
+            catch (Exception error) when (error is IOException || error is ArgumentException
+                                          || error is InvalidOperationException || error is UnauthorizedAccessException)
+            {
+                return new Dictionary<string, object>();
+            }
+        }
+
+        void NationalToggled()
+        {
+            var enabled = nationalButton.Checked;
+            nationalButton.ForeColor = enabled ? Green : Color.White;
+            if (enabled == nationalOn) return;
+            try
+            {
+                var settings = LoadSettings();
+                settings["national"] = enabled;
+                File.WriteAllText(Path.Combine(dataRoot, "settings.json"), new JavaScriptSerializer().Serialize(settings));
+            }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException)
+            {
+                ShowError("تنظیم ذخیره نشد: " + error.Message);
+                return;
+            }
+            var answer = MessageBox.Show(this,
+                (enabled ? "اینترنت ملی روشن می‌شود: بله مستقیم و با DNS ایران وصل می‌شود." :
+                           "اینترنت ملی خاموش می‌شود: اتصال از تنظیمات سیستم انجام می‌شود.")
+                + "\n\nبرای اعمال، بله دوباره باز شود؟", "بله دسکتاپ", MessageBoxButtons.YesNo, MessageBoxIcon.Question,
+                MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+            if (answer != DialogResult.Yes)
+            {
+                ShowToast("با اجرای بعدی بله اعمال می‌شود", 5, false);
+                return;
+            }
+            try { Process.Start(new ProcessStartInfo(Application.ExecutablePath, "--restart") { UseShellExecute = false }); }
+            catch (Exception error) { ShowError("اجرای دوباره نشد: " + error.Message); return; }
+            Quit();
         }
 
         void EnsureSession(string id)
@@ -650,7 +724,7 @@ namespace BaleDesktop
             toastText.Dock = DockStyle.Fill;
             toastText.TextAlign = ContentAlignment.MiddleRight;
             toastText.RightToLeft = RightToLeft.Yes;
-            var show = new LinkLabel { Text = "نمایش", Dock = DockStyle.Left, AutoSize = true, LinkColor = Color.FromArgb(0x7f, 0xf0, 0xd2),
+            var show = toastLink = new LinkLabel { Text = "نمایش", Dock = DockStyle.Left, AutoSize = true, LinkColor = Color.FromArgb(0x7f, 0xf0, 0xd2),
                                        ActiveLinkColor = Color.White, LinkBehavior = LinkBehavior.HoverUnderline, TextAlign = ContentAlignment.MiddleLeft };
             show.LinkClicked += (s, e) => OpenDownloads();
             toast.Controls.Add(toastText);
@@ -665,10 +739,11 @@ namespace BaleDesktop
             toast.Location = new Point(12, host.ClientSize.Height - toast.Height - 12);
         }
 
-        void ShowToast(string message, int seconds)
+        void ShowToast(string message, int seconds, bool downloads = true)
         {
-            if (InvokeRequired) { BeginInvoke((Action)(() => ShowToast(message, seconds))); return; }
+            if (InvokeRequired) { BeginInvoke((Action)(() => ShowToast(message, seconds, downloads))); return; }
             toastText.Text = message;
+            toastLink.Visible = downloads;
             PlaceToast();
             toast.Visible = true;
             toast.BringToFront();
@@ -683,6 +758,7 @@ namespace BaleDesktop
             {
                 tray.Dispose();
                 toastTimer.Dispose();
+                national?.Dispose();
             }
             base.Dispose(disposing);
         }

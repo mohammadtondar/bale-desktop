@@ -11,9 +11,13 @@ namespace BaleDesktop
         static int Main(string[] args)
         {
             var user = Environment.UserName;
-            using (var mutex = new Mutex(true, @"Local\BaleDesktop-" + user, out bool first))
+            using (var mutex = new Mutex(false, @"Local\BaleDesktop-" + user))
             using (var show = new EventWaitHandle(false, EventResetMode.AutoReset, @"Local\BaleDesktop-Show-" + user))
             {
+                bool first;
+                // After a settings restart, wait for the previous instance to exit.
+                try { first = mutex.WaitOne(args.Contains("--restart") ? 15000 : 0); }
+                catch (AbandonedMutexException) { first = true; }
                 if (!first)
                 {
                     // Running again opens the window of the instance already running.
@@ -43,6 +47,7 @@ namespace BaleDesktop
                 }) { IsBackground = true };
                 listener.Start();
                 Application.Run(form);
+                mutex.ReleaseMutex();
                 return 0;
             }
         }
