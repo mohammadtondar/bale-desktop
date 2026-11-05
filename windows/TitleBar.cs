@@ -21,7 +21,7 @@ namespace BaleDesktop
         const int WM_NCCALCSIZE = 0x0083, WM_NCHITTEST = 0x0084;
         const int HTTRANSPARENT = -1, HTCLIENT = 1, HTCAPTION = 2, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
         const string Glyphs = "Segoe MDL2 Assets";
-        const int BarHeight = 32;
+        const int BarHeight = 40;
         static readonly Color BaleLight = Color.White;                       // Bale: background.chat (light)
         static readonly Color BaleDark = Color.FromArgb(0x1A, 0x1B, 0x1C);   // Bale: background.chat (dark)
         static readonly Color CloseRed = Color.FromArgb(0xC4, 0x2B, 0x1C);
@@ -65,15 +65,15 @@ namespace BaleDesktop
                 RightToLeft = RightToLeft.No,      // window buttons on the right, as everywhere in Windows
                 Renderer = new BarRenderer(this),
                 ShowItemToolTips = true,
-                ImageScalingSize = new Size(S(20), S(20)),
+                ImageScalingSize = new Size(S(24), S(24)),
             };
 
             // Left: app icon, then the account switcher as the window title.
             var logo = new ToolStripLabel
             {
-                Image = new Bitmap(Icon.ToBitmap(), S(16), S(16)),
+                Image = new Bitmap(Icon.ToBitmap(), S(20), S(20)),
                 ImageScaling = ToolStripItemImageScaling.None,
-                Margin = new Padding(S(10), 0, S(4), 0),
+                Margin = new Padding(S(12), 0, S(6), 0),
                 ToolTipText = "بله دسکتاپ",
             };
             accountButton = new ToolStripDropDownButton
@@ -81,9 +81,9 @@ namespace BaleDesktop
                 ShowDropDownArrow = false,
                 ImageScaling = ToolStripItemImageScaling.None,
                 TextImageRelation = TextImageRelation.ImageBeforeText,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f),
-                Margin = new Padding(0, S(3), 0, S(3)),
-                Padding = new Padding(S(4), 0, S(6), 0),
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 10f),
+                Margin = new Padding(0, S(4), 0, S(4)),
+                Padding = new Padding(S(6), 0, S(8), 0),
             };
             Themed(accountButton.DropDown, RightToLeft.Yes);
             accountButton.DropDown.ImageScalingSize = new Size(S(28), S(28));
@@ -97,9 +97,9 @@ namespace BaleDesktop
             menuButton = new ToolStripDropDownButton("\uE700")
             {
                 ShowDropDownArrow = false,
-                Font = new Font(Glyphs, 9f),
+                Font = new Font(Glyphs, 10.5f),
                 AutoSize = false,
-                Size = new Size(S(36), S(BarHeight)),
+                Size = new Size(S(42), S(BarHeight)),
                 Margin = new Padding(0, 0, S(6), 0),
                 ToolTipText = "منو",
                 Alignment = ToolStripItemAlignment.Right,
@@ -122,9 +122,9 @@ namespace BaleDesktop
             {
                 CheckOnClick = true,
                 Checked = nationalOn,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 8.25f),
-                Margin = new Padding(S(4), S(6), S(4), S(6)),
-                Padding = new Padding(S(6), 0, S(6), 0),
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f),
+                Margin = new Padding(S(6), S(8), S(6), S(8)),
+                Padding = new Padding(S(8), 0, S(8), 0),
                 Alignment = ToolStripItemAlignment.Right,
                 ToolTipText = "اینترنت ملی: اتصال مستقیم بله با DNS ایران، بدون عبور از پروکسی فیلترشکن.\n"
                               + "وقتی فیلترشکن بله را مختل می‌کند روشن کنید.",
@@ -148,9 +148,9 @@ namespace BaleDesktop
         {
             var button = new ToolStripButton(glyph)
             {
-                Font = new Font(Glyphs, 9f),
+                Font = new Font(Glyphs, 10.5f),
                 AutoSize = false,
-                Size = new Size(S(36), S(BarHeight)),
+                Size = new Size(S(42), S(BarHeight)),
                 Margin = Padding.Empty,
                 ToolTipText = tip,
             };
@@ -161,7 +161,7 @@ namespace BaleDesktop
         ToolStripButton Caption(string glyph, string tip, EventHandler click)
         {
             var button = Glyph(glyph, tip, click);
-            button.Font = new Font(Glyphs, 7f);
+            button.Font = new Font(Glyphs, 7.5f);
             button.Size = new Size(S(46), S(BarHeight));
             button.Alignment = ToolStripItemAlignment.Right;
             button.Overflow = ToolStripItemOverflow.Never;
@@ -220,7 +220,7 @@ namespace BaleDesktop
             sessions.TryGetValue(active.id, out var session);
             accountButton.Text = active.name + "  ▾";
             accountButton.Image?.Dispose();
-            accountButton.Image = Avatar(active, S(20), StatusColor());
+            accountButton.Image = Avatar(active, S(24), StatusColor());
             accountButton.ToolTipText = active.name + " — " + (session?.Status ?? "در حال اتصال…") + "\nتغییر حساب";
 
             var items = accountButton.DropDownItems;
