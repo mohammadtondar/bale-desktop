@@ -13,7 +13,7 @@ wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bal
 sudo apt install ./bale-desktop_0.2.6_all.deb
 ```
 
-نسخهٔ `0.2.6`، ۶۴ بیتی مستقل از معماری نیست ولی بستهٔ `all` است؛ وابستگی‌ها هنگام نصب با `apt` تأمین می‌شوند.
+بستهٔ `all` به معماری پردازنده وابسته نیست و `apt` پیش‌نیازها را خودش نصب می‌کند؛ نیازی به بخش پیش‌نیازها نیست.
 
 ### AppImage (همهٔ توزیع‌های لینوکس)
 
@@ -23,7 +23,53 @@ chmod +x bale-desktop_0.2.6_x86_64.AppImage
 ./bale-desktop_0.2.6_x86_64.AppImage
 ```
 
-نسخهٔ AppImage حدود ۱ مگابایت است و از GTK 3 و WebKitGTK 4.1 خود سیستم استفاده می‌کند. این‌ها در بیشتر توزیع‌ها نصب‌اند و اگر نباشند، برنامه دستور نصب مخصوص همان توزیع را نشان می‌دهد (apt، dnf، pacman یا zypper). داده‌ها و حساب‌ها با نسخهٔ `.deb` مشترک‌اند. به‌روزرسانی با AppImageUpdate هم پشتیبانی می‌شود.
+نسخهٔ AppImage حدود ۱ مگابایت است و از GTK 3 و WebKitGTK 4.1 خود سیستم استفاده می‌کند. این‌ها در بیشتر توزیع‌ها نصب‌اند؛ اگر نباشند، برنامه دستور نصب را نشان می‌دهد. دستورها در بخش [پیش‌نیازهای لینوکس](#linux-prerequisites) هم آمده‌اند. داده‌ها و حساب‌ها با نسخهٔ `.deb` مشترک‌اند. به‌روزرسانی با AppImageUpdate هم پشتیبانی می‌شود.
+
+<a id="linux-prerequisites"></a>
+
+### پیش‌نیازهای لینوکس
+
+فقط برای AppImage یا اجرا از کد منبع لازم است؛ بستهٔ `.deb` آن‌ها را خودش نصب می‌کند. ابتدا بررسی کنید که نصب‌اند یا نه:
+
+```sh
+python3 -c 'import gi; gi.require_version("Gtk", "3.0"); gi.require_version("WebKit2", "4.1")' && echo "پیش‌نیازها نصب‌اند"
+```
+
+اگر خطا داد، دستور توزیع خود را اجرا کنید:
+
+**اوبونتو ۲۲٫۰۴ به بعد، دبیان ۱۲ به بعد، لینوکس مینت، پاپ‌اواس:**
+
+```sh
+sudo apt update
+sudo apt install python3 python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-ayatanaappindicator3-0.1
+```
+
+**فدورا:**
+
+```sh
+sudo dnf install python3-gobject gtk3 webkit2gtk4.1 libayatana-appindicator-gtk3
+```
+
+**آرچ، مانجارو، اندِوراواس:**
+
+```sh
+sudo pacman -S --needed python-gobject gtk3 webkit2gtk-4.1 libayatana-appindicator
+```
+
+**اوپن‌سوزه:**
+
+```sh
+sudo zypper install python3-gobject-Gdk typelib-1_0-Gtk-3_0 typelib-1_0-WebKit2-4_1 typelib-1_0-AyatanaAppIndicator3-0_1
+```
+
+بستهٔ AppIndicator فقط برای آیکون کنار ساعت است و برنامه بدون آن هم کار می‌کند. در گنوم (به‌جز اوبونتو که از پیش دارد) آیکون کنار ساعت به افزونهٔ AppIndicator نیاز دارد:
+
+```sh
+sudo apt install gnome-shell-extension-appindicator   # اوبونتو / دبیان
+sudo dnf install gnome-shell-extension-appindicator   # فدورا
+```
+
+پس از نصب افزونه، یک بار از حساب کاربری خارج و دوباره وارد شوید.
 
 ### ویندوز ۱۰ و ۱۱
 
@@ -48,10 +94,11 @@ chmod +x bale-desktop_0.2.6_x86_64.AppImage
 
 ## اجرا و نصب
 
-وابستگی‌های اوبونتو:
+پس از نصب [پیش‌نیازها](#linux-prerequisites):
 
 ```sh
-sudo apt install python3 python3-gi gir1.2-gtk-3.0 gir1.2-webkit2-4.1 gir1.2-ayatanaappindicator3-0.1
+git clone https://github.com/mohammadtondar/bale-desktop.git
+cd bale-desktop
 ./run.sh
 ```
 
