@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -9,19 +11,26 @@ using Microsoft.Win32;
 namespace BaleDesktop
 {
     /// <summary>
-    /// One top bar instead of the Windows title bar plus a toolbar: the caption
-    /// is removed from the native frame (resize, snap, shadow and the system menu
-    /// stay native) and the toolbar acts as the title bar. Its colour follows
-    /// Bale's own theme (white / near-black) or Bale green.
+    /// One slim top bar, in the style of an installed web app: the native caption
+    /// is removed (resize, snap, shadow and the system menu stay native) and the
+    /// bar acts as the title bar. Its colour follows Bale's own theme
+    /// (white / near-black) or Bale green; accounts switch from an avatar menu.
     /// </summary>
     public sealed partial class MainForm
     {
         const int WM_NCCALCSIZE = 0x0083, WM_NCHITTEST = 0x0084;
         const int HTTRANSPARENT = -1, HTCLIENT = 1, HTCAPTION = 2, HTTOP = 12, HTTOPLEFT = 13, HTTOPRIGHT = 14;
         const string Glyphs = "Segoe MDL2 Assets";
+        const int BarHeight = 32;
         static readonly Color BaleLight = Color.White;                       // Bale: background.chat (light)
         static readonly Color BaleDark = Color.FromArgb(0x1A, 0x1B, 0x1C);   // Bale: background.chat (dark)
         static readonly Color CloseRed = Color.FromArgb(0xC4, 0x2B, 0x1C);
+        static readonly Color[] AvatarColors =
+        {
+            Color.FromArgb(0x00, 0xB6, 0x98), Color.FromArgb(0x4F, 0xC3, 0xF7), Color.FromArgb(0xF0, 0x62, 0x92),
+            Color.FromArgb(0xFF, 0xA7, 0x26), Color.FromArgb(0x95, 0x75, 0xCD), Color.FromArgb(0x26, 0xA6, 0x9A),
+            Color.FromArgb(0xEF, 0x53, 0x50),
+        };
 
         [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
         [StructLayout(LayoutKind.Sequential)] struct NCCALCSIZE_PARAMS { public RECT Proposed, Old, OldClient; public IntPtr Position; }
@@ -32,9 +41,11 @@ namespace BaleDesktop
 
         TitleStrip header;
         ToolStripButton maximizeButton, closeButton;
+        ToolStripDropDownButton accountButton, menuButton;
         string headerMode = "auto";               // "auto" = follow Bale's theme, "green"
-        Color headerBack = BaleLight, headerFore = Color.Black;
+        Color headerBack = BaleLight, headerFore = Color.Black, menuBack = Color.White, menuFore = Color.Black;
         ToolStripMenuItem modeAuto, modeGreen;
+        MenuRenderer menuRenderer;
 
         int S(int value) => (int)Math.Round(value * DeviceDpi / 96f);
 
@@ -43,98 +54,103 @@ namespace BaleDesktop
         void BuildHeader()
         {
             headerMode = LoadSettings().TryGetValue("header", out var mode) && mode as string == "green" ? "green" : "auto";
+            menuRenderer = new MenuRenderer(this);
             header = new TitleStrip(this)
             {
                 Dock = DockStyle.Top,
                 AutoSize = false,
-                Height = S(38),
+                Height = S(BarHeight),
                 GripStyle = ToolStripGripStyle.Hidden,
                 Padding = Padding.Empty,
                 RightToLeft = RightToLeft.No,      // window buttons on the right, as everywhere in Windows
                 Renderer = new BarRenderer(this),
                 ShowItemToolTips = true,
+                ImageScalingSize = new Size(S(20), S(20)),
             };
 
-            var logo = new ToolStripLabel("بله")
+            // Left: app icon, then the account switcher as the window title.
+            var logo = new ToolStripLabel
             {
-                Image = Icon.ToBitmap(),
+                Image = new Bitmap(Icon.ToBitmap(), S(16), S(16)),
                 ImageScaling = ToolStripItemImageScaling.None,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 10.5f, FontStyle.Bold),
-                Margin = new Padding(S(10), 0, S(6), 0),
+                Margin = new Padding(S(10), 0, S(4), 0),
+                ToolTipText = "بله دسکتاپ",
             };
-            logo.Image = new Bitmap(logo.Image, S(20), S(20));
-            var reload = Glyph("\uE72C", "تازه‌سازی حساب فعلی (F5)", (s, e) => ReloadActive());
-            status.Margin = new Padding(S(2), 0, S(6), 0);
-            status.Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f);
-
-            nationalButton = new ToolStripButton("اینترنت ملی")
+            accountButton = new ToolStripDropDownButton
             {
-                CheckOnClick = true,
-                Checked = nationalOn,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f, FontStyle.Bold),
-                Margin = new Padding(S(4), S(7), S(4), S(7)),
-                Padding = new Padding(S(6), 0, S(6), 0),
-                ToolTipText = "اینترنت ملی: اتصال مستقیم بله با DNS ایران، بدون عبور از پروکسی فیلترشکن.\n"
-                              + "وقتی فیلترشکن بله را مختل می‌کند روشن کنید.",
+                ShowDropDownArrow = false,
+                ImageScaling = ToolStripItemImageScaling.None,
+                TextImageRelation = TextImageRelation.ImageBeforeText,
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f),
+                Margin = new Padding(0, S(3), 0, S(3)),
+                Padding = new Padding(S(4), 0, S(6), 0),
             };
-            nationalButton.CheckedChanged += (s, e) => { ApplyHeaderTheme(); NationalToggled(); };
+            Themed(accountButton.DropDown, RightToLeft.Yes);
+            accountButton.DropDown.ImageScalingSize = new Size(S(28), S(28));
 
             // Right side, listed from the window edge inwards.
             var minimize = Caption("\uE921", "کوچک کردن", (s, e) => WindowState = FormWindowState.Minimized);
             maximizeButton = Caption("\uE922", "بزرگ کردن", (s, e) =>
                 WindowState = WindowState == FormWindowState.Maximized ? FormWindowState.Normal : FormWindowState.Maximized);
             closeButton = Caption("\uE8BB", "بستن (بله در کنار ساعت فعال می‌ماند)", (s, e) => Close());
-            var gap = new ToolStripLabel { AutoSize = false, Width = S(8), Alignment = ToolStripItemAlignment.Right };
 
-            var menu = new ToolStripDropDownButton("\uE700")
+            menuButton = new ToolStripDropDownButton("\uE700")
             {
                 ShowDropDownArrow = false,
-                Font = new Font(Glyphs, 10f),
+                Font = new Font(Glyphs, 9f),
                 AutoSize = false,
-                Size = new Size(S(40), S(38)),
-                Margin = Padding.Empty,
+                Size = new Size(S(36), S(BarHeight)),
+                Margin = new Padding(0, 0, S(6), 0),
                 ToolTipText = "منو",
                 Alignment = ToolStripItemAlignment.Right,
             };
-            menu.DropDown.RightToLeft = RightToLeft.Yes;
-            menu.DropDownItems.Add("افزودن حساب", null, (s, e) => ProfileDialog(false));
-            menu.DropDownItems.Add("تغییر نام پروفایل", null, (s, e) => ProfileDialog(true));
-            menu.DropDownItems.Add("باز کردن پوشهٔ دانلودها", null, (s, e) => OpenDownloads());
+            Themed(menuButton.DropDown, RightToLeft.Yes);
+            menuButton.DropDownItems.Add("باز کردن پوشهٔ دانلودها", null, (s, e) => OpenDownloads());
             var colors = new ToolStripMenuItem("رنگ نوار بالا");
             modeAuto = new ToolStripMenuItem("هماهنگ با تم بله (سفید / مشکی)", null, (s, e) => SetHeaderMode("auto"));
             modeGreen = new ToolStripMenuItem("سبز بله", null, (s, e) => SetHeaderMode("green"));
             colors.DropDownItems.AddRange(new ToolStripItem[] { modeAuto, modeGreen });
-            colors.DropDown.RightToLeft = RightToLeft.Yes;
-            menu.DropDownItems.Add(colors);
-            menu.DropDownItems.Add(new ToolStripSeparator());
-            menu.DropDownItems.Add(new ToolStripMenuItem("خروج کامل", null, (s, e) => Quit()) { ShortcutKeys = Keys.Control | Keys.Q });
+            Themed(colors.DropDown, RightToLeft.Yes);
+            menuButton.DropDownItems.Add(colors);
+            menuButton.DropDownItems.Add(new ToolStripSeparator());
+            menuButton.DropDownItems.Add(new ToolStripMenuItem("خروج کامل", null, (s, e) => Quit()) { ShortcutKeyDisplayString = "Ctrl+Q" });
 
-            picker.DropDownStyle = ComboBoxStyle.DropDownList;
-            picker.FlatStyle = FlatStyle.Flat;
-            picker.ToolTipText = "تغییر پروفایل";
-            picker.Alignment = ToolStripItemAlignment.Right;
-            picker.ComboBox.Width = S(150);
-            picker.ComboBox.RightToLeft = RightToLeft.Yes;
-            picker.Margin = new Padding(S(4), 0, S(4), 0);
-            picker.SelectedIndexChanged += (s, e) =>
+            var reload = Glyph("\uE72C", "تازه‌سازی حساب فعلی (F5)", (s, e) => ReloadActive());
+            reload.Alignment = ToolStripItemAlignment.Right;
+
+            nationalButton = new ToolStripButton("اینترنت ملی")
             {
-                if (!updatingPicker && picker.SelectedItem is ProfileItem item) SwitchProfile(item.Id);
+                CheckOnClick = true,
+                Checked = nationalOn,
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 8.25f),
+                Margin = new Padding(S(4), S(6), S(4), S(6)),
+                Padding = new Padding(S(6), 0, S(6), 0),
+                Alignment = ToolStripItemAlignment.Right,
+                ToolTipText = "اینترنت ملی: اتصال مستقیم بله با DNS ایران، بدون عبور از پروکسی فیلترشکن.\n"
+                              + "وقتی فیلترشکن بله را مختل می‌کند روشن کنید.",
             };
-            var add = Glyph("\uE710", "افزودن حساب", (s, e) => ProfileDialog(false));
-            add.Alignment = ToolStripItemAlignment.Right;
+            nationalButton.CheckedChanged += (s, e) => { ApplyHeaderTheme(); NationalToggled(); };
 
-            header.Items.AddRange(new ToolStripItem[] { logo, reload, status, nationalButton,
-                                                        closeButton, maximizeButton, minimize, gap, menu, picker, add });
+            header.Items.AddRange(new ToolStripItem[] { logo, accountButton,
+                                                        closeButton, maximizeButton, minimize, menuButton, reload, nationalButton });
             ApplyHeaderTheme();
+        }
+
+        void Themed(ToolStripDropDown dropDown, RightToLeft direction)
+        {
+            dropDown.Renderer = menuRenderer;
+            dropDown.RightToLeft = direction;
+            dropDown.Padding = new Padding(S(4));
+            if (dropDown is ToolStripDropDownMenu menu) menu.ShowCheckMargin = false;
         }
 
         ToolStripButton Glyph(string glyph, string tip, EventHandler click)
         {
             var button = new ToolStripButton(glyph)
             {
-                Font = new Font(Glyphs, 10f),
+                Font = new Font(Glyphs, 9f),
                 AutoSize = false,
-                Size = new Size(S(40), S(38)),
+                Size = new Size(S(36), S(BarHeight)),
                 Margin = Padding.Empty,
                 ToolTipText = tip,
             };
@@ -145,11 +161,99 @@ namespace BaleDesktop
         ToolStripButton Caption(string glyph, string tip, EventHandler click)
         {
             var button = Glyph(glyph, tip, click);
-            button.Font = new Font(Glyphs, 7.5f);
-            button.Size = new Size(S(46), S(38));
+            button.Font = new Font(Glyphs, 7f);
+            button.Size = new Size(S(46), S(BarHeight));
             button.Alignment = ToolStripItemAlignment.Right;
             button.Overflow = ToolStripItemOverflow.Never;
             return button;
+        }
+
+        // ---------- accounts ----------
+
+        /// <summary>A round avatar with the account's initial, and an optional status dot.</summary>
+        Bitmap Avatar(Profile profile, int size, Color? dot)
+        {
+            var bitmap = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bitmap))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                var hash = profile.id.Aggregate(0, (sum, c) => sum * 31 + c);
+                using (var fill = new SolidBrush(AvatarColors[(hash & int.MaxValue) % AvatarColors.Length]))
+                    g.FillEllipse(fill, 0, 0, size - 1, size - 1);
+                var initial = profile.name.Trim().Length > 0 ? profile.name.Trim().Substring(0, 1) : "؟";
+                using (var font = new Font(SystemFonts.MessageBoxFont.FontFamily, size * 0.42f, FontStyle.Bold, GraphicsUnit.Pixel))
+                using (var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                    g.DrawString(initial, font, Brushes.White, new RectangleF(0, 0, size, size + 1), format);
+                if (dot is Color status)
+                {
+                    var d = size * 0.36f;
+                    using (var ring = new SolidBrush(headerBack)) g.FillEllipse(ring, size - d - 0.5f, size - d - 0.5f, d + 0.5f, d + 0.5f);
+                    using (var brush = new SolidBrush(status)) g.FillEllipse(brush, size - d + 1, size - d + 1, d - 2.5f, d - 2.5f);
+                }
+            }
+            return bitmap;
+        }
+
+        static Bitmap PlusAvatar(int size, Color color)
+        {
+            var bitmap = new Bitmap(size, size);
+            using (var g = Graphics.FromImage(bitmap))
+            using (var pen = new Pen(color, Math.Max(1.5f, size / 16f)))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                pen.DashStyle = DashStyle.Solid;
+                g.DrawEllipse(pen, 1, 1, size - 3, size - 3);
+                var c = size / 2f - 0.5f;
+                var r = size * 0.2f;
+                g.DrawLine(pen, c - r, c, c + r, c);
+                g.DrawLine(pen, c, c - r, c, c + r);
+            }
+            return bitmap;
+        }
+
+        /// <summary>Rebuild the account button and its menu (names, active account, status).</summary>
+        void RefreshPicker()
+        {
+            if (accountButton == null) return;
+            var active = profiles.Get(profiles.Active);
+            sessions.TryGetValue(active.id, out var session);
+            accountButton.Text = active.name + "  ▾";
+            accountButton.Image?.Dispose();
+            accountButton.Image = Avatar(active, S(20), StatusColor());
+            accountButton.ToolTipText = active.name + " — " + (session?.Status ?? "در حال اتصال…") + "\nتغییر حساب";
+
+            var items = accountButton.DropDownItems;
+            foreach (ToolStripItem old in items) old.Image?.Dispose();
+            items.Clear();
+            var title = new ToolStripLabel("حساب‌ها") { ForeColor = Color.Gray, Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 8f), Margin = new Padding(S(8), S(2), S(8), S(2)) };
+            items.Add(title);
+            foreach (var profile in profiles.Items)
+            {
+                var id = profile.id;
+                var isActive = id == profiles.Active;
+                var ready = sessions.TryGetValue(id, out var s) && s.Ready;
+                var item = new ToolStripMenuItem(profile.name, Avatar(profile, S(28), ready ? Color.FromArgb(0x04, 0xCC, 0x83) : (Color?)null))
+                {
+                    Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9.5f, isActive ? FontStyle.Bold : FontStyle.Regular),
+                    ImageScaling = ToolStripItemImageScaling.None,
+                    Padding = new Padding(0, S(4), 0, S(4)),
+                    Tag = isActive ? "active" : null,
+                    ToolTipText = s?.Status,
+                };
+                item.Click += (sender, e) => { if (id != profiles.Active) SwitchProfile(id); };
+                items.Add(item);
+            }
+            items.Add(new ToolStripSeparator());
+            items.Add(new ToolStripMenuItem("افزودن حساب", PlusAvatar(S(28), Color.FromArgb(0x00, 0xB6, 0x98)), (sender, e) => ProfileDialog(false))
+            {
+                ImageScaling = ToolStripItemImageScaling.None,
+                Padding = new Padding(0, S(4), 0, S(4)),
+                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9.5f),
+            });
+            items.Add(new ToolStripMenuItem("تغییر نام «" + active.name + "»", null, (sender, e) => ProfileDialog(true)));
+            ApplyMenuColors(accountButton.DropDown);
+            this.header.Invalidate();
         }
 
         // ---------- colours ----------
@@ -170,16 +274,21 @@ namespace BaleDesktop
         {
             if (header == null) return;
             Color? bale = sessions.TryGetValue(profiles.Active, out var session) ? session.Theme : null;
-            headerBack = headerMode == "green" ? Green : bale ?? SystemGuess();
+            var baleTheme = bale ?? SystemGuess();
+            headerBack = headerMode == "green" ? Green : baleTheme;
             var light = IsLight(headerBack);
-            headerFore = light ? Color.FromArgb(0x1F, 0x23, 0x28) : Color.White;
+            headerFore = light ? Color.FromArgb(0x1F, 0x23, 0x28) : Color.FromArgb(0xE8, 0xEA, 0xED);
+            // Menus follow Bale's light/dark theme even when the bar is green.
+            var darkMenus = !IsLight(baleTheme);
+            menuBack = darkMenus ? Color.FromArgb(0x2B, 0x2C, 0x2E) : Color.White;
+            menuFore = darkMenus ? Color.FromArgb(0xE8, 0xEA, 0xED) : Color.FromArgb(0x1F, 0x23, 0x28);
+
             header.BackColor = headerBack;
             foreach (ToolStripItem item in header.Items) item.ForeColor = headerFore;
             if (nationalButton.Checked) nationalButton.ForeColor = headerBack;   // inverted "on" pill
-            picker.ComboBox.BackColor = headerBack;
-            picker.ComboBox.ForeColor = headerFore;
-            status.ForeColor = StatusColor();
             if (modeAuto != null) { modeAuto.Checked = headerMode == "auto"; modeGreen.Checked = headerMode == "green"; }
+            ApplyMenuColors(menuButton.DropDown);
+            RefreshPicker();
             if (IsHandleCreated)
             {
                 // Dark frame/system menu with a dark bar; Windows 11 border in the bar's colour.
@@ -191,11 +300,20 @@ namespace BaleDesktop
             header.Invalidate();
         }
 
+        void ApplyMenuColors(ToolStripDropDown dropDown)
+        {
+            dropDown.BackColor = menuBack;
+            foreach (ToolStripItem item in dropDown.Items)
+            {
+                if (!(item is ToolStripLabel)) item.ForeColor = menuFore;
+                if (item is ToolStripMenuItem sub && sub.HasDropDownItems) ApplyMenuColors(sub.DropDown);
+            }
+        }
+
         Color StatusColor()
         {
             var ready = sessions.TryGetValue(profiles.Active, out var session) && session.Ready;
-            if (headerMode == "green") return ready ? Color.White : Color.FromArgb(255, 235, 150);
-            return ready ? Color.FromArgb(0x04, 0xCC, 0x83) : Color.FromArgb(0xE0, 0x9B, 0x00);
+            return ready ? Color.FromArgb(0x04, 0xCC, 0x83) : Color.FromArgb(0xF0, 0xA2, 0x02);
         }
 
         void SetHeaderMode(string mode)
@@ -213,6 +331,28 @@ namespace BaleDesktop
             if (session.ProfileId == profiles.Active) ApplyHeaderTheme();
         }
 
+        // ---------- painting ----------
+
+        static GraphicsPath Rounded(RectangleF r, float radius)
+        {
+            var path = new GraphicsPath();
+            var d = radius * 2;
+            path.AddArc(r.X, r.Y, d, d, 180, 90);
+            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+            path.CloseFigure();
+            return path;
+        }
+
+        static void FillRounded(Graphics g, Color color, RectangleF r, float radius)
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            using (var path = Rounded(r, radius))
+            using (var brush = new SolidBrush(color))
+                g.FillPath(brush, path);
+        }
+
         sealed class BarRenderer : ToolStripProfessionalRenderer
         {
             readonly MainForm form;
@@ -222,23 +362,30 @@ namespace BaleDesktop
 
             protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
             {
-                if (!(e.ToolStrip is TitleStrip)) { base.OnRenderToolStripBackground(e); return; }
                 using (var brush = new SolidBrush(form.headerBack)) e.Graphics.FillRectangle(brush, e.AffectedBounds);
             }
 
             protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
             {
-                if (!(e.ToolStrip is TitleStrip)) { base.OnRenderButtonBackground(e); return; }
                 var bounds = new Rectangle(Point.Empty, e.Item.Size);
-                if (e.Item == form.nationalButton && form.nationalButton.Checked)
+                var caption = e.Item.Alignment == ToolStripItemAlignment.Right && e.Item.Overflow == ToolStripItemOverflow.Never;
+                if (e.Item == form.nationalButton)
                 {
-                    using (var brush = new SolidBrush(form.headerFore)) e.Graphics.FillRectangle(brush, bounds);
+                    var pill = new RectangleF(0.5f, 0.5f, bounds.Width - 1, bounds.Height - 1);
+                    if (form.nationalButton.Checked) FillRounded(e.Graphics, form.headerFore, pill, pill.Height / 2);
+                    else
+                    {
+                        e.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+                        using (var path = Rounded(pill, pill.Height / 2))
+                        using (var pen = new Pen(Color.FromArgb(e.Item.Selected ? 160 : 90, form.headerFore)))
+                            e.Graphics.DrawPath(pen, path);
+                    }
                     return;
                 }
-                if (!e.Item.Selected && !e.Item.Pressed) return;
-                var color = e.Item == form.closeButton ? CloseRed
-                          : Color.FromArgb(e.Item.Pressed ? 46 : 28, form.headerFore);
-                using (var brush = new SolidBrush(color)) e.Graphics.FillRectangle(brush, bounds);
+                if (!e.Item.Selected && !e.Item.Pressed && !(e.Item is ToolStripDropDownItem dd && dd.Pressed)) return;
+                var color = e.Item == form.closeButton ? CloseRed : Color.FromArgb(e.Item.Pressed ? 40 : 24, form.headerFore);
+                if (caption) using (var brush = new SolidBrush(color)) e.Graphics.FillRectangle(brush, bounds);
+                else FillRounded(e.Graphics, color, new RectangleF(1, 2, bounds.Width - 2, bounds.Height - 4), form.S(4));
             }
 
             protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs e) => OnRenderButtonBackground(e);
@@ -247,6 +394,59 @@ namespace BaleDesktop
             {
                 if (e.Item == form.closeButton && (e.Item.Selected || e.Item.Pressed)) e.TextColor = Color.White;
                 base.OnRenderItemText(e);
+            }
+        }
+
+        /// <summary>Flat, rounded menus in Bale's light or dark colours.</summary>
+        sealed class MenuRenderer : ToolStripProfessionalRenderer
+        {
+            readonly MainForm form;
+            public MenuRenderer(MainForm form) { this.form = form; RoundedEdges = false; }
+
+            protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
+            {
+                using (var brush = new SolidBrush(form.menuBack)) e.Graphics.FillRectangle(brush, e.AffectedBounds);
+            }
+
+            protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e)
+            {
+                using (var pen = new Pen(Color.FromArgb(40, form.menuFore)))
+                    e.Graphics.DrawRectangle(pen, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
+            }
+
+            protected override void OnRenderImageMargin(ToolStripRenderEventArgs e) { }
+
+            protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
+            {
+                var r = new RectangleF(form.S(2), 1, e.Item.Width - form.S(4), e.Item.Height - 2);
+                if (Equals(e.Item.Tag, "active")) FillRounded(e.Graphics, Color.FromArgb(40, 0x00, 0xB6, 0x98), r, form.S(6));
+                if (e.Item.Selected && e.Item.Enabled) FillRounded(e.Graphics, Color.FromArgb(24, form.menuFore), r, form.S(6));
+            }
+
+            protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+            {
+                e.TextColor = e.Item is ToolStripLabel ? Color.FromArgb(140, form.menuFore) : form.menuFore;
+                base.OnRenderItemText(e);
+            }
+
+            protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e)
+            {
+                using (var font = new Font(Glyphs, 8f))
+                using (var brush = new SolidBrush(Color.FromArgb(0x00, 0xB6, 0x98)))
+                using (var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center })
+                    e.Graphics.DrawString("\uE73E", font, brush, e.ImageRectangle, format);
+            }
+
+            protected override void OnRenderSeparator(ToolStripSeparatorRenderEventArgs e)
+            {
+                using (var pen = new Pen(Color.FromArgb(36, form.menuFore)))
+                    e.Graphics.DrawLine(pen, form.S(8), e.Item.Height / 2, e.Item.Width - form.S(8), e.Item.Height / 2);
+            }
+
+            protected override void OnRenderArrow(ToolStripArrowRenderEventArgs e)
+            {
+                e.ArrowColor = form.menuFore;
+                base.OnRenderArrow(e);
             }
         }
 

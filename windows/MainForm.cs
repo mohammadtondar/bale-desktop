@@ -43,7 +43,6 @@ namespace BaleDesktop
         NationalProxy national;
         ToolStripButton nationalButton;
 
-        readonly ToolStripComboBox picker = new ToolStripComboBox();
         readonly ToolStripLabel status = new ToolStripLabel("●");
         readonly Panel host = new Panel { Dock = DockStyle.Fill };
         readonly Panel toast = new Panel();
@@ -52,7 +51,7 @@ namespace BaleDesktop
         readonly Timer toastTimer = new Timer();
         readonly NotifyIcon tray = new NotifyIcon();
         Action balloonClick;
-        bool quitting, updatingPicker, hiddenTipShown;
+        bool quitting, hiddenTipShown;
 
         public MainForm(bool background)
         {
@@ -89,12 +88,6 @@ namespace BaleDesktop
         }
 
         // ---------- window, header and tray ----------
-
-        sealed class ProfileItem
-        {
-            public string Id, Name;
-            public override string ToString() => Name;
-        }
 
         void BuildTray()
         {
@@ -177,19 +170,6 @@ namespace BaleDesktop
 
         // ---------- profiles ----------
 
-        void RefreshPicker()
-        {
-            updatingPicker = true;
-            picker.Items.Clear();
-            foreach (var p in profiles.Items)
-            {
-                var item = new ProfileItem { Id = p.id, Name = p.name };
-                picker.Items.Add(item);
-                if (p.id == profiles.Active) picker.SelectedItem = item;
-            }
-            updatingPicker = false;
-        }
-
         void SwitchProfile(string id)
         {
             try { profiles.Select(id); }
@@ -198,7 +178,6 @@ namespace BaleDesktop
             foreach (var session in sessions.Values) session.View.Visible = session.ProfileId == id;
             sessions[id].View.BringToFront();
             toast.BringToFront();
-            if (!(picker.SelectedItem is ProfileItem item) || item.Id != id) RefreshPicker();
             Text = "بله — " + profiles.Get(id).name;
             status.ToolTipText = sessions[id].Status;
             ApplyHeaderTheme();
@@ -387,7 +366,7 @@ namespace BaleDesktop
             session.Status = text;
             if (session.ProfileId != profiles.Active) return;
             status.ToolTipText = text;
-            status.ForeColor = StatusColor();
+            RefreshPicker();
         }
 
         void UpdateBackground()
