@@ -16,7 +16,7 @@ def main():
     control = STAGE / "DEBIAN"
     control.mkdir()
     (control / "control").write_text("""Package: bale-desktop
-Version: 0.2.5
+Version: 0.2.6
 Architecture: all
 Maintainer: Bale Desktop contributors <noreply@example.invalid>
 Depends: python3 (>= 3.10), python3-gi, gir1.2-gtk-3.0, gir1.2-webkit2-4.1
@@ -42,7 +42,7 @@ Description: Unofficial Bale Web desktop client with multiple accounts
     shutil.copy2(ROOT / "packaging" / "copyright", docs / "copyright")
     output = ROOT / "dist"
     output.mkdir(exist_ok=True)
-    subprocess.run(["dpkg-deb", "--root-owner-group", "--build", str(STAGE), str(output / "bale-desktop_0.2.5_all.deb")], check=True)
+    subprocess.run(["dpkg-deb", "--root-owner-group", "--build", str(STAGE), str(output / "bale-desktop_0.2.6_all.deb")], check=True)
 
 if __name__ == "__main__":
     main()

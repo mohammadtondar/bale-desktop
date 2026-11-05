@@ -91,6 +91,17 @@ def response_is_download(response):
     return True
 
 
+def memory_settings():
+    """Make each web process release caches early instead of growing freely.
+
+    The limit only sets when WebKit starts cleaning up (at 1/3 and 1/2 of it);
+    the kill threshold stays disabled, so a busy chat is never terminated.
+    """
+    settings = WebKit2.MemoryPressureSettings.new()
+    settings.set_memory_limit(512)
+    return settings
+
+
 class DownloadJob:
     """Track one in-flight download so duplicate signals are ignored."""
 
@@ -112,6 +123,7 @@ class BaleApplication(Gtk.Application):
         self.downloads = set()
         self.download_names = {}
         self.pending_navigations = set()
+        self.bridge_source = None
         self.held = False
 
     def do_startup(self):
@@ -281,18 +293,24 @@ class BaleApplication(Gtk.Application):
         for directory in (base, cache):
             directory.mkdir(mode=0o700, parents=True, exist_ok=True)
         data = WebKit2.WebsiteDataManager(base_data_directory=str(base), base_cache_directory=str(cache))
-        context = WebKit2.WebContext.new_with_website_data_manager(data)
+        context = WebKit2.WebContext(website_data_manager=data, memory_pressure_settings=memory_settings())
+        # One single-page app per profile: no browser-sized memory cache needed.
+        context.set_cache_model(WebKit2.CacheModel.DOCUMENT_BROWSER)
         context.get_cookie_manager().set_persistent_storage(str(base / 'cookies.sqlite'), WebKit2.CookiePersistentStorage.SQLITE)
         manager = WebKit2.UserContentManager()
         manager.register_script_message_handler('bale')
         manager.connect('script-message-received::bale', self.bridge_message, profile_id)
-        manager.add_script(WebKit2.UserScript.new((ROOT / 'bridge.js').read_text(),
+        if self.bridge_source is None:
+            self.bridge_source = (ROOT / 'bridge.js').read_text()
+        manager.add_script(WebKit2.UserScript.new(self.bridge_source,
             WebKit2.UserContentInjectedFrames.TOP_FRAME, WebKit2.UserScriptInjectionTime.START,
             ['https://web.bale.ai/*'], None))
         view = WebKit2.WebView(web_context=context, user_content_manager=manager)
         self.sessions[profile_id] = {'view': view, 'context': context, 'data': data,
                                      'ready': False, 'status': 'در حال اتصال…', 'failed': False}
-        view.get_settings().set_enable_media_stream(True)
+        settings = view.get_settings()
+        settings.set_enable_media_stream(True)
+        settings.set_enable_page_cache(False)  # no back/forward history in a web app
         view.connect('decide-policy', self.navigation_policy)
         view.connect('permission-request', self.permission_request)
         view.connect('show-notification', self.native_notification)
@@ -454,11 +472,17 @@ class BaleApplication(Gtk.Application):
         if kind == WebKit2.PolicyDecisionType.RESPONSE:
             uri = decision.get_request().get_uri()
             response = decision.get_response() if hasattr(decision, 'get_response') else None
-            if trusted_url(uri) or uri.startswith(("blob:", "data:")) or response_is_download(response):
+            if trusted_url(uri) or uri.startswith(("blob:", "data:")):
                 return False
-            decision.ignore()
             started_by_gesture = uri in self.pending_navigations
             self.pending_navigations.discard(uri)
+            # A Bale file opened in the main frame (even an image or PDF) must be
+            # saved, not rendered in place of the app or silently dropped.
+            if response_is_download(response) or (
+                    navigation_allowed(uri) and decision.is_main_frame_main_resource()):
+                decision.download()
+                return True
+            decision.ignore()
             if started_by_gesture and urlsplit(uri).scheme in ("https", "http"):
                 Gio.AppInfo.launch_default_for_uri(uri, None)
             return True
@@ -474,7 +498,10 @@ class BaleApplication(Gtk.Application):
 
     def new_web_window(self, view, action):
         uri = action.get_request().get_uri()
-        if action.is_user_gesture() and urlsplit(uri).scheme in ("https", "http"):
+        if navigation_allowed(uri) and not trusted_url(uri):
+            # Bale file links opened in a new tab: there is no tab, so save them.
+            view.download_uri(uri)
+        elif action.is_user_gesture() and urlsplit(uri).scheme in ("https", "http"):
             Gio.AppInfo.launch_default_for_uri(uri, None)
         return None
 

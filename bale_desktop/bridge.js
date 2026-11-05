@@ -102,8 +102,13 @@
     }
   }
 
+  let ticks = 0;
   function connect() {
     try {
+      // Once connected, a cheap owner check replaces the full React tree walk;
+      // still rescan every ~30 s in case Bale remounted its providers.
+      if (subscription && store && ++ticks % 15 &&
+          pick(ids.selfId, 'H4')?.(store.getState()) === connectedOwner) return;
       if (!runtime) {
         if (!window.rspackChunkweb?.push) return;
         window.rspackChunkweb.push([[`bale-desktop-${Date.now()}`], {}, r => { runtime = r; }]);
@@ -139,25 +144,27 @@
   window.BaleDesktop = Object.freeze({
     background(value) { background = Boolean(value); }
   });
-  // Bale downloads blob: URLs, whose names are lost to WebKit; report them first.
-  if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-    const nativeCreate = URL.createObjectURL.bind(URL);
-    URL.createObjectURL = function (blob) {
-      const uri = nativeCreate(blob);
-      try {
-        const capture = (event) => {
-          const anchor = event.target.closest?.('a[download]');
-          if (anchor && anchor.href === uri) {
-            post({kind: 'download-name', uri, name: anchor.getAttribute('download') || blob.name || 'file'});
-            document.removeEventListener('click', capture, true);
-          }
-        };
-        document.addEventListener('click', capture, true);
-        setTimeout(() => document.removeEventListener('click', capture, true), 60000);
-      } catch (_) { /* naming is best-effort; the download itself must still work */ }
-      return uri;
-    };
-  }
+
+  // Bale fetches a file first and only hands it to the browser while
+  // navigator.userActivation.isActive is still true. WebKit expires that flag
+  // after ~1 s (Chromium: 5 s), so every file slower than that was silently
+  // dropped. Report the click as live; WebKit's own gesture checks are unaffected.
+  try {
+    if (typeof UserActivation !== 'undefined') {
+      Object.defineProperty(UserActivation.prototype, 'isActive', {configurable: true, get: () => true});
+    }
+  } catch (_) { /* fall back to Bale's own behaviour */ }
+
+  // blob: downloads lose their name before WebKit sees them; report it first.
+  // One capture listener on window instead of one listener per object URL.
+  addEventListener('click', (event) => {
+    try {
+      const anchor = event.target.closest?.('a[download]');
+      if (anchor && anchor.href.startsWith('blob:')) {
+        post({kind: 'download-name', uri: anchor.href, name: anchor.getAttribute('download') || 'file'});
+      }
+    } catch (_) { /* naming is best-effort; the download itself must still work */ }
+  }, true);
 
   const timer = setInterval(connect, 2000);
   addEventListener('pagehide', () => { clearInterval(timer); subscription?.unsubscribe(); });
