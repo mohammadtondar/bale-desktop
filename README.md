@@ -15,6 +15,16 @@ sudo apt install ./bale-desktop_0.2.6_all.deb
 
 نسخهٔ `0.2.6`، ۶۴ بیتی مستقل از معماری نیست ولی بستهٔ `all` است؛ وابستگی‌ها هنگام نصب با `apt` تأمین می‌شوند.
 
+### AppImage (همهٔ توزیع‌های لینوکس)
+
+```sh
+wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_x86_64.AppImage
+chmod +x bale-desktop_0.2.6_x86_64.AppImage
+./bale-desktop_0.2.6_x86_64.AppImage
+```
+
+نسخهٔ AppImage حدود ۱ مگابایت است و از GTK 3 و WebKitGTK 4.1 خود سیستم استفاده می‌کند. این‌ها در بیشتر توزیع‌ها نصب‌اند و اگر نباشند، برنامه دستور نصب مخصوص همان توزیع را نشان می‌دهد (apt، dnf، pacman یا zypper). داده‌ها و حساب‌ها با نسخهٔ `.deb` مشترک‌اند. به‌روزرسانی با AppImageUpdate هم پشتیبانی می‌شود.
+
 ### ویندوز ۱۰ و ۱۱
 
 از [صفحهٔ آخرین نسخه](https://github.com/mohammadtondar/bale-desktop/releases/latest) یکی را بگیرید:
@@ -58,6 +68,7 @@ python3 packaging/install_user.py
 ./run.sh --demo
 python3 packaging/build_deb.py
 sudo apt install ./dist/bale-desktop_0.2.6_all.deb
+python3 packaging/build_appimage.py   # dist/bale-desktop_0.2.6_x86_64.AppImage
 ```
 
 حالت `--demo` پیش‌نمایش آفلاین است و به حساب متصل نمی‌شود. وضعیت اتصال در راهنمای شناور آیکون اتصال در نوار بالا قرار دارد.
