@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- .NET Framework 4.8 ships with Windows 10/11 and WebView2 (Edge) is built in,
+       so the app is a small exe plus a few DLLs: no runtime to install or bundle. -->
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <AssemblyName>BaleDesktop</AssemblyName>
+    <RootNamespace>BaleDesktop</RootNamespace>
+    <Version>0.2.6</Version>
+    <Product>Bale Desktop</Product>
+    <Description>Unofficial Bale client for Windows with multiple accounts</Description>
+    <Copyright>MIT License</Copyright>
+    <ApplicationIcon>bale.ico</ApplicationIcon>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <DebugType>none</DebugType>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Net.Http" />
+    <Reference Include="System.Web.Extensions" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- The same read-only notification/download adapter as the Linux build. -->
+    <EmbeddedResource Include="..\bale_desktop\bridge.js" LogicalName="bridge.js" />
+    <EmbeddedResource Include="bale.ico" LogicalName="bale.ico" />
+  </ItemGroup>
+</Project>

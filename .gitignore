@@ -6,3 +6,7 @@ bale-web-snapshot.html
 .secrets/
 .secrets
 dist/
+windows/bin/
+windows/obj/
+out/
+dist-win/

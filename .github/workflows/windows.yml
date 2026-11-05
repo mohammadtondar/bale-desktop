@@ -1,0 +1,46 @@
+name: Windows build
+
+on:
+  push:
+    branches: [main]
+    paths: ['windows/**', 'bale_desktop/bridge.js', '.github/workflows/windows.yml']
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: dotnet build windows/BaleDesktop.csproj -c Release -o out
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $version = (Select-Xml -Path windows/BaleDesktop.csproj -XPath '//Version').Node.InnerText
+          Remove-Item out/Microsoft.Web.WebView2.Wpf.dll   # WinForms app; WPF host unused
+          New-Item -ItemType Directory dist-win | Out-Null
+          Compress-Archive -Path out/* -DestinationPath "dist-win/bale-desktop_${version}_windows-portable.zip"
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup --no-progress -y | Out-Null }
+          & $iscc "/DAppVersion=$version" windows/installer.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          Get-ChildItem dist-win | Format-Table Name, Length
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bale-desktop-windows
+          path: dist-win/*
+
+      - name: Attach to release
+        if: github.event_name == 'release'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ github.event.release.tag_name }}" (Get-ChildItem dist-win).FullName --clobber

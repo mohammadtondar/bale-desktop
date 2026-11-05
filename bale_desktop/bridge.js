@@ -5,10 +5,12 @@
  */
 (() => {
   'use strict';
-  if (location.origin !== 'https://web.bale.ai' || window.BaleDesktop) return;
+  if (location.origin !== 'https://web.bale.ai' || window.BaleDesktop || (window.top && window.top !== window)) return;
   let runtime, store, core, subscription, connectedCore, connectedOwner, background = false;
   let attempts = 0;
-  const post = (value) => window.webkit.messageHandlers.bale.postMessage(JSON.stringify(value));
+  // Linux (WebKitGTK) and Windows (WebView2) hosts share this adapter.
+  const host = window.chrome?.webview || window.webkit?.messageHandlers?.bale;
+  const post = (value) => host.postMessage(JSON.stringify(value));
 
   // ids[symbol] lists module ids that have exported the symbol, newest first.
   const ids = {
