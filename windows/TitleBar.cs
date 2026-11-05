@@ -36,7 +36,7 @@ namespace BaleDesktop
         [StructLayout(LayoutKind.Sequential)] struct NCCALCSIZE_PARAMS { public RECT Proposed, Old, OldClient; public IntPtr Position; }
 
         [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
-        [DllImport("user32.dll")] static extern int GetSystemMetrics(int index);
+        [DllImport("user32.dll")] static extern bool IsZoomed(IntPtr hwnd);
         [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
 
         TitleStrip header;
@@ -481,10 +481,11 @@ namespace BaleDesktop
                 var before = (NCCALCSIZE_PARAMS)Marshal.PtrToStructure(m.LParam, typeof(NCCALCSIZE_PARAMS));
                 base.WndProc(ref m);
                 var after = (NCCALCSIZE_PARAMS)Marshal.PtrToStructure(m.LParam, typeof(NCCALCSIZE_PARAMS));
-                after.Proposed.Top = before.Proposed.Top;
-                // A maximized window hangs past the screen edge by its frame width.
-                if (WindowState == FormWindowState.Maximized)
-                    after.Proposed.Top += GetSystemMetrics(33 /* SM_CYFRAME */) + GetSystemMetrics(92 /* SM_CXPADDEDBORDER */);
+                // A maximized window hangs past the screen edge by its (invisible) frame,
+                // as wide on top as on the sides; keep the bar on screen. WindowState is
+                // not updated yet while maximizing, so ask Windows directly.
+                var frame = after.Proposed.Left - before.Proposed.Left;
+                after.Proposed.Top = before.Proposed.Top + (IsZoomed(Handle) ? frame : 0);
                 Marshal.StructureToPtr(after, m.LParam, false);
                 m.Result = IntPtr.Zero;
                 return;
@@ -495,7 +496,7 @@ namespace BaleDesktop
                 if ((int)m.Result != HTCLIENT) return;
                 var point = PointToClient(ScreenPoint(m.LParam));
                 var edge = S(6);
-                if (WindowState == FormWindowState.Normal && point.Y < edge)
+                if (!IsZoomed(Handle) && point.Y < edge)
                     m.Result = (IntPtr)(point.X < edge * 2 ? HTTOPLEFT : point.X >= ClientSize.Width - edge * 2 ? HTTOPRIGHT : HTTOP);
                 else if (header != null && point.Y < header.Height)
                     m.Result = (IntPtr)HTCAPTION;   // drag, double-click to maximize, Aero snap, system menu
@@ -522,7 +523,7 @@ namespace BaleDesktop
                 {
                     var point = PointToClient(ScreenPoint(m.LParam));
                     var item = GetItemAt(point);
-                    var topEdge = form.WindowState == FormWindowState.Normal && point.Y < form.S(6);
+                    var topEdge = !IsZoomed(form.Handle) && point.Y < form.S(6);
                     if (topEdge || item == null || (item is ToolStripLabel && item != form.status))
                     {
                         m.Result = (IntPtr)HTTRANSPARENT;   // let the form answer: caption or resize edge
