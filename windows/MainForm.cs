@@ -21,10 +21,11 @@ namespace BaleDesktop
         public WebView2 View;
         public CoreWebView2 Core;
         public bool Ready;
+        public Color? Theme;   // Bale's theme-color for this account
         public string Status = "در حال اتصال…";
     }
 
-    public sealed class MainForm : Form
+    public sealed partial class MainForm : Form
     {
         const string HomeUrl = "https://web.bale.ai/";
         static readonly Color Green = Color.FromArgb(0x00, 0xb6, 0x98);
@@ -36,13 +37,12 @@ namespace BaleDesktop
         readonly Dictionary<string, Session> sessions = new Dictionary<string, Session>();
         readonly HashSet<string> notified = new HashSet<string>();
         readonly Queue<string> notifiedOrder = new Queue<string>();
-        readonly string bridge;
+        readonly string bridge, themeScript;
         Task<CoreWebView2Environment> environment;
         readonly bool nationalOn;
         NationalProxy national;
         ToolStripButton nationalButton;
 
-        readonly ToolStrip header = new ToolStrip();
         readonly ToolStripComboBox picker = new ToolStripComboBox();
         readonly ToolStripLabel status = new ToolStripLabel("●");
         readonly Panel host = new Panel { Dock = DockStyle.Fill };
@@ -63,15 +63,17 @@ namespace BaleDesktop
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("bridge.js"))
             using (var reader = new StreamReader(stream))
                 bridge = reader.ReadToEnd();
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("theme.js"))
+            using (var reader = new StreamReader(stream))
+                themeScript = reader.ReadToEnd();
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("bale.ico"))
                 Icon = new Icon(stream);
 
             Text = "بله دسکتاپ";
             RightToLeft = RightToLeft.Yes;
-            RightToLeftLayout = true;
             AutoScaleMode = AutoScaleMode.Dpi;
-            ClientSize = new Size(1120, 780);
-            MinimumSize = new Size(480, 400);
+            ClientSize = new Size(S(1120), S(780));
+            MinimumSize = new Size(S(560), S(420));
             StartPosition = FormStartPosition.CenterScreen;
             if (startBackground) { Opacity = 0; ShowInTaskbar = false; }
 
@@ -87,83 +89,6 @@ namespace BaleDesktop
         }
 
         // ---------- window, header and tray ----------
-
-        void BuildHeader()
-        {
-            header.Dock = DockStyle.Top;
-            header.GripStyle = ToolStripGripStyle.Hidden;
-            header.BackColor = Green;
-            header.ForeColor = Color.White;
-            header.Padding = new Padding(4, 2, 4, 2);
-            header.RenderMode = ToolStripRenderMode.System;
-            header.Renderer = new FlatRenderer();
-
-            var logo = new ToolStripLabel("بله") { Font = new Font(Font.FontFamily, 10f, FontStyle.Bold), Image = Icon.ToBitmap() };
-            logo.ImageScaling = ToolStripItemImageScaling.SizeToFit;
-            var reload = Button("⟳", "تازه‌سازی حساب فعلی (F5)", (s, e) => ReloadActive());
-            nationalButton = new ToolStripButton("اینترنت ملی")
-            {
-                CheckOnClick = true,
-                Checked = nationalOn,
-                ForeColor = nationalOn ? Green : Color.White,
-                Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9f, FontStyle.Bold),
-                ToolTipText = "اینترنت ملی: اتصال مستقیم بله با DNS ایران، بدون عبور از پروکسی فیلترشکن.\n"
-                              + "وقتی فیلترشکن بله را مختل می‌کند روشن کنید.",
-            };
-            nationalButton.CheckedChanged += (s, e) => NationalToggled();
-            status.ToolTipText = "در حال اتصال…";
-            status.ForeColor = Color.FromArgb(255, 235, 150);
-
-            picker.DropDownStyle = ComboBoxStyle.DropDownList;
-            picker.ToolTipText = "تغییر پروفایل";
-            picker.Alignment = ToolStripItemAlignment.Right;
-            picker.ComboBox.Width = 150;
-            picker.SelectedIndexChanged += (s, e) =>
-            {
-                if (!updatingPicker && picker.SelectedItem is ProfileItem item) SwitchProfile(item.Id);
-            };
-            var add = Button("+", "افزودن حساب", (s, e) => ProfileDialog(false));
-            add.Alignment = ToolStripItemAlignment.Right;
-
-            var menu = new ToolStripDropDownButton("☰") { ShowDropDownArrow = false, Alignment = ToolStripItemAlignment.Right };
-            menu.ForeColor = Color.White;
-            menu.DropDownItems.Add("افزودن حساب", null, (s, e) => ProfileDialog(false));
-            menu.DropDownItems.Add("تغییر نام پروفایل", null, (s, e) => ProfileDialog(true));
-            menu.DropDownItems.Add("باز کردن پوشهٔ دانلودها", null, (s, e) => OpenDownloads());
-            menu.DropDownItems.Add(new ToolStripSeparator());
-            menu.DropDownItems.Add(new ToolStripMenuItem("خروج کامل", null, (s, e) => Quit()) { ShortcutKeys = Keys.Control | Keys.Q });
-
-            header.Items.AddRange(new ToolStripItem[] { logo, reload, status, nationalButton, menu, picker, add });
-        }
-
-        static ToolStripButton Button(string text, string tip, EventHandler click)
-        {
-            var button = new ToolStripButton(text) { ToolTipText = tip, ForeColor = Color.White };
-            button.Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 11f, FontStyle.Bold);
-            button.Click += click;
-            return button;
-        }
-
-        sealed class FlatRenderer : ToolStripProfessionalRenderer
-        {
-            protected override void OnRenderToolStripBorder(ToolStripRenderEventArgs e) { }
-            protected override void OnRenderToolStripBackground(ToolStripRenderEventArgs e)
-            {
-                using (var brush = new SolidBrush(Green)) e.Graphics.FillRectangle(brush, e.AffectedBounds);
-            }
-            protected override void OnRenderButtonBackground(ToolStripItemRenderEventArgs e)
-            {
-                if (e.Item is ToolStripButton toggle && toggle.Checked)
-                {
-                    e.Graphics.FillRectangle(Brushes.White, new Rectangle(1, 2, e.Item.Width - 2, e.Item.Height - 4));
-                    return;
-                }
-                if (!e.Item.Selected && !e.Item.Pressed) return;
-                using (var brush = new SolidBrush(Color.FromArgb(46, 255, 255, 255)))
-                    e.Graphics.FillRectangle(brush, new Rectangle(Point.Empty, e.Item.Size));
-            }
-            protected override void OnRenderDropDownButtonBackground(ToolStripItemRenderEventArgs e) => OnRenderButtonBackground(e);
-        }
 
         sealed class ProfileItem
         {
@@ -230,12 +155,6 @@ namespace BaleDesktop
             base.OnFormClosing(e);
         }
 
-        protected override void OnResize(EventArgs e)
-        {
-            base.OnResize(e);
-            if (WindowState == FormWindowState.Minimized || Visible) UpdateBackground();
-        }
-
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
             if (keyData == (Keys.Control | Keys.Q)) { Quit(); return true; }
@@ -282,6 +201,7 @@ namespace BaleDesktop
             if (!(picker.SelectedItem is ProfileItem item) || item.Id != id) RefreshPicker();
             Text = "بله — " + profiles.Get(id).name;
             status.ToolTipText = sessions[id].Status;
+            ApplyHeaderTheme();
             UpdateBackground();
         }
 
@@ -291,19 +211,17 @@ namespace BaleDesktop
             {
                 dialog.Text = rename ? "تغییر نام پروفایل" : "افزودن حساب";
                 dialog.RightToLeft = RightToLeft.Yes;
-                dialog.RightToLeftLayout = true;
                 dialog.FormBorderStyle = FormBorderStyle.FixedDialog;
                 dialog.StartPosition = FormStartPosition.CenterParent;
                 dialog.MinimizeBox = dialog.MaximizeBox = false;
                 dialog.ShowInTaskbar = false;
-                dialog.AutoScaleMode = AutoScaleMode.Dpi;
-                dialog.ClientSize = new Size(340, 130);
-                var entry = new TextBox { Left = 16, Top = 16, Width = 308, MaxLength = 32 };
+                dialog.ClientSize = new Size(S(340), S(130));
+                var entry = new TextBox { Left = S(16), Top = S(16), Width = S(308), MaxLength = 32 };
                 if (rename) entry.Text = profiles.Get(profiles.Active).name;
-                var cue = new Label { Left = 16, Top = 44, Width = 308, Height = 36, ForeColor = Color.DimGray,
+                var cue = new Label { Left = S(16), Top = S(44), Width = S(308), Height = S(36), ForeColor = Color.DimGray,
                                       Text = "نام پروفایل؛ مثلاً شخصی یا کاری" };
-                var ok = new Button { Text = rename ? "ذخیره" : "ایجاد", Left = 16, Top = 88, Width = 90 };
-                var cancel = new Button { Text = "انصراف", Left = 112, Top = 88, Width = 90, DialogResult = DialogResult.Cancel };
+                var ok = new Button { Text = rename ? "ذخیره" : "ایجاد", Left = S(16), Top = S(88), Width = S(90), Height = S(28) };
+                var cancel = new Button { Text = "انصراف", Left = S(112), Top = S(88), Width = S(90), Height = S(28), DialogResult = DialogResult.Cancel };
                 dialog.Controls.AddRange(new Control[] { entry, cue, ok, cancel });
                 dialog.AcceptButton = ok;
                 dialog.CancelButton = cancel;
@@ -366,22 +284,27 @@ namespace BaleDesktop
             }
         }
 
-        void NationalToggled()
+        bool SaveSetting(string key, object value)
         {
-            var enabled = nationalButton.Checked;
-            nationalButton.ForeColor = enabled ? Green : Color.White;
-            if (enabled == nationalOn) return;
             try
             {
                 var settings = LoadSettings();
-                settings["national"] = enabled;
+                settings[key] = value;
                 File.WriteAllText(Path.Combine(dataRoot, "settings.json"), new JavaScriptSerializer().Serialize(settings));
+                return true;
             }
             catch (Exception error) when (error is IOException || error is UnauthorizedAccessException)
             {
                 ShowError("تنظیم ذخیره نشد: " + error.Message);
-                return;
+                return false;
             }
+        }
+
+        void NationalToggled()
+        {
+            var enabled = nationalButton.Checked;
+            if (enabled == nationalOn) return;
+            if (!SaveSetting("national", enabled)) return;
             var answer = MessageBox.Show(this,
                 (enabled ? "اینترنت ملی روشن می‌شود: بله مستقیم و با DNS ایران وصل می‌شود." :
                            "اینترنت ملی خاموش می‌شود: اتصال از تنظیمات سیستم انجام می‌شود.")
@@ -400,7 +323,7 @@ namespace BaleDesktop
         void EnsureSession(string id)
         {
             if (sessions.ContainsKey(id)) return;
-            var view = new WebView2 { Dock = DockStyle.Fill, Visible = false, DefaultBackgroundColor = Color.White };
+            var view = new WebView2 { Dock = DockStyle.Fill, Visible = false, DefaultBackgroundColor = SystemGuess() };
             var session = new Session { ProfileId = id, View = view };
             sessions[id] = session;
             host.Controls.Add(view);
@@ -437,6 +360,7 @@ namespace BaleDesktop
             core.Profile.DefaultDownloadFolderPath = DownloadDirectory();
 
             await core.AddScriptToExecuteOnDocumentCreatedAsync(bridge);
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(themeScript);
             core.WebMessageReceived += (s, e) => BridgeMessage(session, e);
             core.NavigationStarting += (s, e) => NavigationStarting(session, e);
             core.NavigationCompleted += (s, e) =>
@@ -461,9 +385,9 @@ namespace BaleDesktop
         void SetStatus(Session session, string text)
         {
             session.Status = text;
-            if (session.ProfileId == profiles.Active) status.ToolTipText = text;
-            if (session.ProfileId == profiles.Active)
-                status.ForeColor = session.Ready ? Color.White : Color.FromArgb(255, 235, 150);
+            if (session.ProfileId != profiles.Active) return;
+            status.ToolTipText = text;
+            status.ForeColor = StatusColor();
         }
 
         void UpdateBackground()
@@ -496,6 +420,9 @@ namespace BaleDesktop
                             && item.TryGetValue("title", out var title) && title is string titleText
                             && item.TryGetValue("body", out var body) && body is string bodyText)
                             Notify(session.ProfileId, idText, titleText, bodyText);
+                        break;
+                    case "theme":
+                        ThemeMessage(session, item);
                         break;
                     case "ready":
                         session.Ready = true;
@@ -718,7 +645,7 @@ namespace BaleDesktop
             toast.Visible = false;
             toast.BackColor = Color.FromArgb(0, 40, 33);
             toast.Padding = new Padding(10, 6, 10, 6);
-            toast.Size = new Size(330, 34);
+            toast.Size = new Size(S(340), S(36));
             toastText.AutoEllipsis = true;
             toastText.ForeColor = Color.White;
             toastText.Dock = DockStyle.Fill;
@@ -736,7 +663,7 @@ namespace BaleDesktop
 
         void PlaceToast()
         {
-            toast.Location = new Point(12, host.ClientSize.Height - toast.Height - 12);
+            toast.Location = new Point(S(12), host.ClientSize.Height - toast.Height - S(12));
         }
 
         void ShowToast(string message, int seconds, bool downloads = true)
