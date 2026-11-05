@@ -12,10 +12,10 @@
 
 | سیستم‌عامل | فایل | حجم |
 |---|---|---|
-| **ویندوز ۱۰ و ۱۱** (نصب‌کننده) | [bale-desktop_0.2.6_windows-setup.exe](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_windows-setup.exe) | ۲٫۴ مگابایت |
-| ویندوز (قابل‌حمل، بدون نصب) | [bale-desktop_0.2.6_windows-portable.zip](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_windows-portable.zip) | ۰٫۵ مگابایت |
-| **لینوکس**، همهٔ توزیع‌ها (AppImage) | [bale-desktop_0.2.6_x86_64.AppImage](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_x86_64.AppImage) | ۱ مگابایت |
-| اوبونتو و دبیان (`.deb`) | [bale-desktop_0.2.6_all.deb](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_all.deb) | ۵۵ کیلوبایت |
+| **ویندوز ۱۰ و ۱۱** (نصب‌کننده) | [bale-desktop_0.2.7_windows-setup.exe](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_windows-setup.exe) | ۲٫۴ مگابایت |
+| ویندوز (قابل‌حمل، بدون نصب) | [bale-desktop_0.2.7_windows-portable.zip](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_windows-portable.zip) | ۰٫۵ مگابایت |
+| **لینوکس**، همهٔ توزیع‌ها (AppImage) | [bale-desktop_0.2.7_x86_64.AppImage](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_x86_64.AppImage) | ۱ مگابایت |
+| اوبونتو و دبیان (`.deb`) | [bale-desktop_0.2.7_all.deb](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_all.deb) | ۵۵ کیلوبایت |
 
 همهٔ نسخه‌ها و تغییرات در [صفحهٔ انتشارها](https://github.com/mohammadtondar/bale-desktop/releases) است.
 
@@ -31,7 +31,7 @@
 
 ## نصب بله روی ویندوز
 
-1. فایل [bale-desktop_0.2.6_windows-setup.exe](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_windows-setup.exe) را دانلود کنید.
+1. فایل [bale-desktop_0.2.7_windows-setup.exe](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_windows-setup.exe) را دانلود کنید.
 2. اجرا کنید. نیازی به دسترسی مدیر (Administrator) نیست. اگر ویندوز هشدار SmartScreen داد، «More info» و سپس «Run anyway» را بزنید؛ این هشدار برای برنامه‌های تازه و بدون امضای تجاری معمول است.
 3. در صورت تمایل گزینهٔ اجرای خودکار در پس‌زمینه را بزنید تا اعلان‌ها همیشه برسند.
 4. «Bale Desktop» را از منوی Start باز کنید و مثل بلهٔ وب با شمارهٔ خود وارد شوید.
@@ -43,9 +43,9 @@
 ### AppImage (همهٔ توزیع‌ها)
 
 ```sh
-wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_x86_64.AppImage
-chmod +x bale-desktop_0.2.6_x86_64.AppImage
-./bale-desktop_0.2.6_x86_64.AppImage
+wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_x86_64.AppImage
+chmod +x bale-desktop_0.2.7_x86_64.AppImage
+./bale-desktop_0.2.7_x86_64.AppImage
 ```
 
 نسخهٔ AppImage از GTK 3 و WebKitGTK 4.1 خود سیستم استفاده می‌کند. این‌ها در بیشتر توزیع‌ها نصب‌اند؛ اگر نباشند، برنامه دستور نصب را نشان می‌دهد. دستورها در بخش [پیش‌نیازهای لینوکس](#linux-prerequisites) هم آمده‌اند. به‌روزرسانی با AppImageUpdate پشتیبانی می‌شود.
@@ -53,8 +53,8 @@ chmod +x bale-desktop_0.2.6_x86_64.AppImage
 ### اوبونتو و دبیان
 
 ```sh
-wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_all.deb
-sudo apt install ./bale-desktop_0.2.6_all.deb
+wget https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_all.deb
+sudo apt install ./bale-desktop_0.2.7_all.deb
 ```
 
 بستهٔ `.deb` پیش‌نیازها را خودش نصب می‌کند. برنامه با نام «بله دسکتاپ» در منوی برنامه‌ها قرار می‌گیرد. داده‌ها و حساب‌ها بین نسخهٔ `.deb` و AppImage مشترک‌اند.
@@ -141,7 +141,7 @@ sudo dnf install gnome-shell-extension-appindicator   # فدورا
 
 ### چطور بله را روی کامپیوتر نصب کنم؟
 
-روی ویندوز فایل [نصب‌کنندهٔ ویندوز](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_windows-setup.exe) را دانلود و اجرا کنید. روی لینوکس از [AppImage یا بستهٔ deb](#نصب-بله-روی-لینوکس) استفاده کنید. سپس با شمارهٔ موبایل خود، مثل بلهٔ وب، وارد شوید.
+روی ویندوز فایل [نصب‌کنندهٔ ویندوز](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_windows-setup.exe) را دانلود و اجرا کنید. روی لینوکس از [AppImage یا بستهٔ deb](#نصب-بله-روی-لینوکس) استفاده کنید. سپس با شمارهٔ موبایل خود، مثل بلهٔ وب، وارد شوید.
 
 ### آیا رایگان و امن است؟
 
@@ -181,8 +181,8 @@ python3 packaging/install_user.py
 ./run.sh --background
 ./run.sh --demo
 python3 packaging/build_deb.py
-sudo apt install ./dist/bale-desktop_0.2.6_all.deb
-python3 packaging/build_appimage.py   # dist/bale-desktop_0.2.6_x86_64.AppImage
+sudo apt install ./dist/bale-desktop_0.2.7_all.deb
+python3 packaging/build_appimage.py   # dist/bale-desktop_0.2.7_x86_64.AppImage
 ```
 
 حالت `--demo` پیش‌نمایش آفلاین است و به حساب متصل نمی‌شود. وضعیت اتصال در راهنمای شناور آیکون اتصال در نوار بالا قرار دارد.
@@ -205,7 +205,7 @@ python3 tests/national_proxy_test.py
 ## Bale Desktop (English)
 
 **Bale messenger for Windows and Linux PC.** Bale Desktop is a free, open-source, *unofficial* desktop app for the Bale messenger (بله) on Windows 10/11 and Linux. It wraps the official Bale Web app in a lightweight native window, with multiple accounts, desktop notifications, a tray icon, automatic file downloads and a "national internet" mode that bypasses a VPN's proxy for Bale.
-Downloads: [Windows installer](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_windows-setup.exe) · [Windows portable](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_windows-portable.zip) · [Linux AppImage](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_x86_64.AppImage) · [Ubuntu/Debian .deb](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.6_all.deb).
+Downloads: [Windows installer](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_windows-setup.exe) · [Windows portable](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_windows-portable.zip) · [Linux AppImage](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_x86_64.AppImage) · [Ubuntu/Debian .deb](https://github.com/mohammadtondar/bale-desktop/releases/latest/download/bale-desktop_0.2.7_all.deb).
 Not affiliated with Bale; the Bale name and logo belong to their owners.
 
 ## گواهی‌نامه
