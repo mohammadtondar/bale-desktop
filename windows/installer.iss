@@ -45,3 +45,5 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 Filename: "{app}\BaleDesktop.exe"; Description: "{cm:LaunchProgram,Bale Desktop}"; Flags: nowait postinstall skipifsilent
+; In-app updates run the installer silently; start Bale again afterwards.
+Filename: "{app}\BaleDesktop.exe"; Flags: nowait; Check: WizardSilent

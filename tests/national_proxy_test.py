@@ -92,6 +92,7 @@ class NationalApp(BaleApplication):
             assert settings == {'national': False}, settings
             assert self.toast.get_visible() and 'خاموش' in self.toast_label.get_text()
             assert not self.toast_button.get_visible(), 'no downloads button on this toast'
+            self.queries_before_off = len(dns.queries)
             self.view.load_uri(URL + '?off')
             GLib.timeout_add_seconds(5, self.check_off)
         except Exception as error:
@@ -101,8 +102,10 @@ class NationalApp(BaleApplication):
 
     def check_off(self):
         try:
-            assert len(hits) == 1, 'off: system route cannot resolve the fake name: %s' % hits
-            assert any(u.endswith('?off') for u in self.failed), self.failed
+            # Off: the system route (direct, or a VPN's system proxy that answers
+            # with its own error page) never reaches the fake name or Iranian DNS.
+            assert len(hits) == 1, 'off: request must not reach the page via Iranian DNS: %s' % hits
+            assert len(dns.queries) == self.queries_before_off, 'off: Iranian DNS must not be used'
             print('PASS: national proxy routes WebKit through Iranian DNS; off restores system route')
         except Exception as error:
             errors.append(str(error))

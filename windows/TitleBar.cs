@@ -112,6 +112,7 @@ namespace BaleDesktop
             colors.DropDownItems.AddRange(new ToolStripItem[] { modeAuto, modeGreen });
             Themed(colors.DropDown, RightToLeft.Yes);
             menuButton.DropDownItems.Add(colors);
+            menuButton.DropDownItems.Add("درباره بله دسکتاپ و به‌روزرسانی", null, (s, e) => AboutDialog());
             menuButton.DropDownItems.Add(new ToolStripSeparator());
             menuButton.DropDownItems.Add(new ToolStripMenuItem("خروج کامل", null, (s, e) => Quit()) { ShortcutKeyDisplayString = "Ctrl+Q" });
 

@@ -2,9 +2,11 @@
 """Compact GTK shell with isolated Bale accounts and ordinary notifications."""
 import argparse
 import json
+import os
 from pathlib import Path
 import signal
 import sys
+import threading
 from urllib.parse import urlsplit
 
 import gi
@@ -13,6 +15,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
+from . import __version__, updater
 from .national import NationalProxy
 from .profiles import ProfileStore
 
@@ -131,6 +134,9 @@ class BaleApplication(Gtk.Application):
         self.bridge_source = None
         self.held = False
         self.national = None
+        self.update_busy = False
+        self.available_release = None
+        self.restart_path = None
 
     def do_startup(self):
         Gtk.Application.do_startup(self)
@@ -148,6 +154,8 @@ class BaleApplication(Gtk.Application):
             ('rename-profile', lambda *_: self.profile_dialog(rename=True), None),
             ('open-profile', self.notification_action, GLib.VariantType.new('s')),
             ('show-downloads', lambda *_: self.open_downloads(), None),
+            ('about', lambda *_: self.about_dialog(), None),
+            ('update-prompt', lambda *_: self.update_notification_clicked(), None),
         ]:
             action = Gio.SimpleAction.new(name, parameter)
             action.connect('activate', handler)
@@ -214,6 +222,7 @@ class BaleApplication(Gtk.Application):
         menu.append('افزودن حساب', 'app.add-profile')
         menu.append('تغییر نام پروفایل', 'app.rename-profile')
         menu.append('باز کردن پوشهٔ دانلودها', 'app.show-downloads')
+        menu.append('درباره بله دسکتاپ و به‌روزرسانی', 'app.about')
         menu.append('خروج کامل', 'app.quit')
         menu_button = Gtk.MenuButton()
         menu_button.set_image(Gtk.Image.new_from_icon_name('open-menu-symbolic', Gtk.IconSize.MENU))
@@ -235,6 +244,7 @@ class BaleApplication(Gtk.Application):
         self.refresh_profiles()
         self.switch_profile(self.profiles.active)
         self.create_tray()
+        self.start_update_checks()
 
     def refresh_profiles(self):
         self.updating_profiles = True
@@ -725,6 +735,154 @@ class BaleApplication(Gtk.Application):
         self.show_toast('اینترنت ملی روشن شد · اتصال مستقیم با DNS ایران' if enabled
                         else 'اینترنت ملی خاموش شد · اتصال از تنظیمات سیستم', 4, downloads=False)
 
+    # ---------- به‌روزرسانی ----------
+
+    def auto_update_enabled(self):
+        return self.load_settings().get('auto_update', True) is not False
+
+    def start_update_checks(self):
+        if self.demo:
+            return
+        GLib.timeout_add_seconds(30, lambda: (self.check_updates(False), False)[1])
+        GLib.timeout_add_seconds(updater.CHECK_INTERVAL, lambda: (self.check_updates(False), True)[1])
+
+    def check_updates(self, manual, status_label=None):
+        """Ask GitHub for the latest release, off the main thread."""
+        if (not manual and not self.auto_update_enabled()) or self.update_busy:
+            return
+        self.update_busy = True
+        if status_label:
+            status_label.set_text('در حال بررسی…')
+
+        def work():
+            try:
+                result = updater.fetch_latest()
+            except Exception as error:  # network, GitHub or JSON problems
+                result = error
+            GLib.idle_add(done, result)
+
+        def done(result):
+            self.update_busy = False
+            if isinstance(result, Exception):
+                if manual:
+                    self.report_update(status_label, 'بررسی نشد؛ اتصال به گیت‌هاب برقرار نشد.')
+                return False
+            if not updater.is_newer(result.version):
+                if manual:
+                    self.report_update(status_label, 'آخرین نسخه را دارید (%s).' % __version__)
+                return False
+            self.available_release = result
+            if status_label:
+                status_label.set_text('نسخهٔ %s آمده است.' % result.version)
+            if not manual and self.load_settings().get('skipped_version') == result.version:
+                return False
+            if manual or self.window.get_visible():
+                self.update_prompt(result)
+            else:
+                note = Gio.Notification.new('نسخهٔ تازهٔ بله دسکتاپ: %s' % result.version)
+                note.set_body('برای به‌روزرسانی کلیک کنید.')
+                note.set_icon(Gio.ThemedIcon.new(APP_ID))
+                note.set_default_action('app.update-prompt')
+                self.send_notification('update-available', note)
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def report_update(self, label, text):
+        if label is not None:
+            label.set_text(text)
+        else:
+            self.show_message(text)
+
+    def show_message(self, text, kind=Gtk.MessageType.INFO):
+        dialog = Gtk.MessageDialog(transient_for=self.window, modal=True, message_type=kind,
+                                   buttons=Gtk.ButtonsType.OK, text=text)
+        dialog.run()
+        dialog.destroy()
+
+    def update_notification_clicked(self):
+        self.show_main()
+        if self.available_release:
+            self.update_prompt(self.available_release)
+
+    def update_prompt(self, release):
+        automatic = updater.running_appimage() is not None and release.asset('_x86_64.AppImage')
+        dialog = Gtk.MessageDialog(transient_for=self.window, modal=True, message_type=Gtk.MessageType.INFO,
+                                   text='نسخهٔ %s بله دسکتاپ آمده است' % release.version)
+        dialog.format_secondary_text(
+            'نسخهٔ فعلی: %s\n\n' % __version__ +
+            ('فایل جدید دریافت و بررسی می‌شود و بله دوباره باز می‌شود؛ حساب‌ها حفظ می‌شوند.' if automatic else
+             'صفحهٔ دانلود نسخهٔ جدید در گیت‌هاب باز می‌شود.'))
+        dialog.add_buttons('رد کردن این نسخه', 1, 'بعداً', Gtk.ResponseType.CANCEL,
+                           'به‌روزرسانی' if automatic else 'دریافت از گیت‌هاب', Gtk.ResponseType.OK)
+        dialog.set_default_response(Gtk.ResponseType.OK)
+        response = dialog.run()
+        dialog.destroy()
+        if response == 1:
+            self.save_settings(skipped_version=release.version)
+        elif response == Gtk.ResponseType.OK:
+            if automatic:
+                self.install_update(release)
+            else:
+                Gio.AppInfo.launch_default_for_uri(release.page, None)
+
+    def install_update(self, release):
+        self.show_toast('در حال دریافت به‌روزرسانی…', 120, downloads=False)
+
+        def progress(fraction):
+            GLib.idle_add(self.toast_label.set_text, 'در حال دریافت به‌روزرسانی… %d٪' % (fraction * 100))
+
+        def work():
+            try:
+                result = updater.install_appimage(release, progress)
+            except Exception as error:
+                result = error
+            GLib.idle_add(done, result)
+
+        def done(result):
+            self.hide_toast()
+            if isinstance(result, Exception):
+                self.show_message('به‌روزرسانی انجام نشد: %s' % result, Gtk.MessageType.ERROR)
+                return False
+            dialog = Gtk.MessageDialog(transient_for=self.window, modal=True, message_type=Gtk.MessageType.QUESTION,
+                                       buttons=Gtk.ButtonsType.YES_NO,
+                                       text='بله دسکتاپ به نسخهٔ %s به‌روز شد. الان دوباره باز شود؟' % release.version)
+            restart = dialog.run() == Gtk.ResponseType.YES
+            dialog.destroy()
+            if restart:
+                self.restart_path = result
+                self.quit()
+            return False
+
+        threading.Thread(target=work, daemon=True).start()
+
+    def about_dialog(self):
+        dialog = Gtk.AboutDialog(transient_for=self.window, modal=True)
+        dialog.set_program_name('بله دسکتاپ')
+        dialog.set_version(__version__)
+        dialog.set_logo_icon_name(APP_ID)
+        dialog.set_comments('برنامهٔ غیررسمی پیام‌رسان بله برای لینوکس و ویندوز.\n'
+                            'ساختهٔ شرکت بله نیست؛ ورود و پیام‌ها مستقیم در سایت بله انجام می‌شود.')
+        dialog.set_website('https://github.com/' + updater.REPO)
+        dialog.set_website_label('صفحهٔ پروژه در گیت‌هاب')
+        dialog.set_license_type(Gtk.License.MIT_X11)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin_top=8)
+        row = Gtk.Box(spacing=8, halign=Gtk.Align.CENTER)
+        status = Gtk.Label()
+        check = Gtk.Button(label='بررسی به‌روزرسانی')
+        check.connect('clicked', lambda *_: self.check_updates(True, status))
+        row.pack_start(check, False, False, 0)
+        row.pack_start(status, False, False, 0)
+        automatic = Gtk.CheckButton(label='بررسی خودکار به‌روزرسانی در پس‌زمینه', halign=Gtk.Align.CENTER)
+        automatic.set_active(self.auto_update_enabled())
+        automatic.connect('toggled', lambda button: self.save_settings(auto_update=button.get_active()))
+        box.pack_start(row, False, False, 0)
+        box.pack_start(automatic, False, False, 0)
+        dialog.get_content_area().pack_end(box, False, False, 0)
+        box.show_all()
+        dialog.run()
+        dialog.destroy()
+
     def do_shutdown(self):
         if self.national is not None:
             self.national.close()
@@ -743,7 +901,12 @@ def main():
     parser.add_argument('--background', action='store_true', help='Start in the background')
     parser.add_argument('--demo', action='store_true', help='Offline preview; no account connection')
     args = parser.parse_args()
-    return BaleApplication(args.background, args.demo).run([sys.argv[0]])
+    app = BaleApplication(args.background, args.demo)
+    code = app.run([sys.argv[0]])
+    if app.restart_path:
+        # Start the updated AppImage in place of this process.
+        os.execv(str(app.restart_path), [str(app.restart_path)])
+    return code
 
 
 if __name__ == '__main__':

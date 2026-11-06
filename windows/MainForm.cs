@@ -85,6 +85,7 @@ namespace BaleDesktop
             foreach (var profile in profiles.Items) EnsureSession(profile.id);
             RefreshPicker();
             SwitchProfile(profiles.Active);
+            StartUpdateChecks();
         }
 
         // ---------- window, header and tray ----------
@@ -94,6 +95,7 @@ namespace BaleDesktop
             var menu = new ContextMenuStrip { RightToLeft = RightToLeft.Yes };
             menu.Items.Add("نمایش بله", null, (s, e) => ShowMain());
             menu.Items.Add("باز کردن پوشهٔ دانلودها", null, (s, e) => OpenDownloads());
+            menu.Items.Add("درباره و به‌روزرسانی", null, (s, e) => { ShowMain(); AboutDialog(); });
             menu.Items.Add("خروج کامل", null, (s, e) => Quit());
             tray.Icon = Icon;
             tray.Text = "بله • فعال در پس‌زمینه";
@@ -664,6 +666,7 @@ namespace BaleDesktop
             {
                 tray.Dispose();
                 toastTimer.Dispose();
+                updateTimer.Dispose();
                 national?.Dispose();
             }
             base.Dispose(disposing);
