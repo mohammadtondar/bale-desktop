@@ -15,7 +15,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
-from . import __version__, updater
+from . import __version__, links, updater
 from .national import NationalProxy
 from .profiles import ProfileStore
 
@@ -123,7 +123,7 @@ class DownloadJob:
 
 class BaleApplication(Gtk.Application):
     def __init__(self, background=False, demo=False):
-        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.FLAGS_NONE)
+        super().__init__(application_id=APP_ID, flags=Gio.ApplicationFlags.HANDLES_OPEN)
         self.start_background, self.demo = background, demo
         self.window = self.view = None
         self.sessions = {}
@@ -131,6 +131,7 @@ class BaleApplication(Gtk.Application):
         self.downloads = set()
         self.download_names = {}
         self.pending_navigations = set()
+        self.open_limiter = links.OpenLimiter()
         self.bridge_source = None
         self.held = False
         self.national = None
@@ -174,6 +175,16 @@ class BaleApplication(Gtk.Application):
         self.build_window()
         if not self.start_background:
             self.show_main()
+
+    def do_open(self, files, n_files, hint):
+        """bale://, ble:// and ble.ir links from other apps (or the command line)."""
+        if not self.window:
+            self.build_window()
+        for item in files:
+            target = links.bale_link_target(item.get_uri())
+            if target:
+                self.open_in_app(self.view, target)
+        self.show_main()
 
     def build_window(self):
         self.window = Gtk.ApplicationWindow(application=self, title='بله دسکتاپ')
@@ -336,6 +347,9 @@ class BaleApplication(Gtk.Application):
         settings = view.get_settings()
         settings.set_enable_media_stream(True)
         settings.set_enable_page_cache(False)  # no back/forward history in a web app
+        # Bale calls window.open after its async link check; let that reach the
+        # policy above (which never creates a window) instead of being dropped.
+        settings.set_javascript_can_open_windows_automatically(True)
         view.connect('decide-policy', self.navigation_policy)
         view.connect('permission-request', self.permission_request)
         view.connect('show-notification', self.native_notification)
@@ -463,6 +477,12 @@ class BaleApplication(Gtk.Application):
             self.set_status(view, 'آزمایشی' if self.demo else 'بله وب')
 
     def load_failed(self, view, event, uri, error):
+        if uri in self.pending_navigations:
+            # An outside link whose site did not answer (filtered, offline):
+            # still hand it to the browser and keep Bale on screen.
+            self.pending_navigations.discard(uri)
+            self.open_external(view, uri)
+            return True
         if error.matches(WebKit2.network_error_quark(), WebKit2.NetworkError.CANCELLED):
             return False
         self.sessions[self.profile_for_view(view)]['failed'] = True
@@ -473,23 +493,43 @@ class BaleApplication(Gtk.Application):
         self.sessions[self.profile_for_view(view)]['ready'] = False
         self.set_status(view, 'موتور وب متوقف شد؛ تازه‌سازی کنید.')
 
+    def open_external(self, view, uri):
+        """Hand a non-Bale link to the user's browser (or mail/phone app).
+
+        Bale opens outside links only after its server-side link-safety check,
+        long after the click, so there is no user gesture to require; only a
+        Bale page may do it, and never as a burst of tabs."""
+        if trusted_url(view.get_uri() or '') and links.external(uri) and self.open_limiter.allow(uri):
+            try:
+                Gio.AppInfo.launch_default_for_uri(uri, None)
+            except GLib.Error as error:
+                self.show_toast('لینک باز نشد: %s' % error.message, 5, downloads=False)
+
+    def open_in_app(self, view, target):
+        """Show a Bale link (ble.ir/…, bale://…) inside the app."""
+        if view.get_uri() != target:
+            view.load_uri(target)
+
     def navigation_policy(self, view, decision, kind):
         if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
-            action = decision.get_navigation_action()
-            uri = action.get_request().get_uri()
+            uri = decision.get_navigation_action().get_request().get_uri()
             scheme = urlsplit(uri).scheme
             if self.demo and uri == "about:blank":
                 return False
-            if action.is_user_gesture() and scheme in ("mailto", "tel"):
-                decision.ignore()
-                Gio.AppInfo.launch_default_for_uri(uri, None)
-                return True
-            # Bale file downloads arrive as a plain navigation action, including
-            # blob: URLs, so defer user-initiated web navigations to the response
-            # stage where downloads can be told apart from ordinary pages.
             if navigation_allowed(uri) or scheme == "about":
                 return False
-            if action.is_user_gesture() and scheme in ("https", "http"):
+            target = links.bale_link_target(uri)
+            if target:
+                decision.ignore()
+                self.open_in_app(view, target)
+                return True
+            if scheme in ("mailto", "tel"):
+                decision.ignore()
+                self.open_external(view, uri)
+                return True
+            if scheme in ("https", "http"):
+                # Main frame or iframe is only known once the server answers;
+                # decide at the response (or at the failure, if it never does).
                 self.pending_navigations.add(uri)
                 return False
             decision.ignore()
@@ -499,35 +539,42 @@ class BaleApplication(Gtk.Application):
             response = decision.get_response() if hasattr(decision, 'get_response') else None
             if trusted_url(uri) or uri.startswith(("blob:", "data:")):
                 return False
-            started_by_gesture = uri in self.pending_navigations
             self.pending_navigations.discard(uri)
+            main_frame = decision.is_main_frame_main_resource()
             # A Bale file opened in the main frame (even an image or PDF) must be
             # saved, not rendered in place of the app or silently dropped.
-            if response_is_download(response) or (
-                    navigation_allowed(uri) and decision.is_main_frame_main_resource()):
+            if response_is_download(response) or (navigation_allowed(uri) and main_frame):
                 decision.download()
                 return True
-            decision.ignore()
-            if started_by_gesture and urlsplit(uri).scheme in ("https", "http"):
-                Gio.AppInfo.launch_default_for_uri(uri, None)
+            decision.ignore()   # outside pages never replace Bale, nor load in its iframes
+            if main_frame:
+                self.open_external(view, uri)
             return True
         if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
-            action = decision.get_navigation_action()
-            uri = action.get_request().get_uri()
+            uri = decision.get_navigation_action().get_request().get_uri()
+            target = links.bale_link_target(uri)
+            if target:
+                decision.ignore()
+                self.open_in_app(view, target)
+                return True
             if not navigation_allowed(uri):
                 decision.ignore()
-                if action.is_user_gesture() and urlsplit(uri).scheme in ("https", "http", "mailto", "tel"):
-                    Gio.AppInfo.launch_default_for_uri(uri, None)
+                self.open_external(view, uri)
                 return True
         return False
 
     def new_web_window(self, view, action):
+        # window.open() from page script arrives here directly, without a
+        # NEW_WINDOW_ACTION policy decision; route it the same way.
         uri = action.get_request().get_uri()
-        if navigation_allowed(uri) and not trusted_url(uri):
+        target = links.bale_link_target(uri)
+        if target:
+            self.open_in_app(view, target)
+        elif navigation_allowed(uri) and not trusted_url(uri):
             # Bale file links opened in a new tab: there is no tab, so save them.
             view.download_uri(uri)
-        elif action.is_user_gesture() and urlsplit(uri).scheme in ("https", "http"):
-            Gio.AppInfo.launch_default_for_uri(uri, None)
+        else:
+            self.open_external(view, uri)
         return None
 
     def permission_request(self, view, request):
@@ -900,9 +947,10 @@ def main():
     parser = argparse.ArgumentParser(description='Bale Desktop for Ubuntu / Linux')
     parser.add_argument('--background', action='store_true', help='Start in the background')
     parser.add_argument('--demo', action='store_true', help='Offline preview; no account connection')
+    parser.add_argument('links', nargs='*', help='Bale links to open: bale://…, ble://…, https://ble.ir/…')
     args = parser.parse_args()
     app = BaleApplication(args.background, args.demo)
-    code = app.run([sys.argv[0]])
+    code = app.run([sys.argv[0]] + [link for link in args.links if links.bale_link_target(link)])
     if app.restart_path:
         # Start the updated AppImage in place of this process.
         os.execv(str(app.restart_path), [str(app.restart_path)])

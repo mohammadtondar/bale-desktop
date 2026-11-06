@@ -53,10 +53,18 @@ namespace BaleDesktop
         Action balloonClick;
         bool quitting, hiddenTipShown;
 
-        public MainForm(bool background)
+        public static string DataRootPath =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BaleDesktop");
+
+        readonly OpenLimiter openLimiter = new OpenLimiter();
+        string pendingLink;
+
+        public MainForm(bool background, string link = null)
         {
-            startBackground = background;
-            dataRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "BaleDesktop");
+            startBackground = background && link == null;
+            pendingLink = Links.BaleLinkTarget(link);
+            dataRoot = DataRootPath;
+            if (!Updater.Installed) Links.RegisterProtocols(Application.ExecutablePath);
             profiles = new ProfileStore(dataRoot);
             nationalOn = LoadSettings().TryGetValue("national", out var value) && value is bool on && on;
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("bridge.js"))
@@ -351,7 +359,7 @@ namespace BaleDesktop
                 else if (!session.Ready) SetStatus(session, "بله وب");
                 UpdateBackground();
             };
-            core.NewWindowRequested += (s, e) => NewWindowRequested(e);
+            core.NewWindowRequested += (s, e) => NewWindowRequested(session, e);
             core.PermissionRequested += (s, e) => PermissionRequested(session, e);
             core.NotificationReceived += (s, e) => NativeNotification(session, e);
             core.DownloadStarting += (s, e) => DownloadStarting(e);
@@ -360,7 +368,9 @@ namespace BaleDesktop
                 session.Ready = false;
                 SetStatus(session, "موتور وب متوقف شد؛ تازه‌سازی کنید.");
             };
-            core.Navigate(HomeUrl);
+            var start = HomeUrl;
+            if (session.ProfileId == profiles.Active && pendingLink != null) { start = pendingLink; pendingLink = null; }
+            core.Navigate(start);
         }
 
         void SetStatus(Session session, string text)
@@ -497,20 +507,59 @@ namespace BaleDesktop
             }
         }
 
+        /// <summary>
+        /// A link the Bale page wants to open. Bale opens outside links only after
+        /// its server-side link-safety check, long after the click, so a user
+        /// gesture cannot be required; only a Bale page may, and never in bursts.
+        /// </summary>
+        void RouteLink(Session session, string uri)
+        {
+            var target = Links.BaleLinkTarget(uri);
+            if (target != null)
+            {
+                if (session.Core.Source != target) session.Core.Navigate(target);   // Bale links stay in the app
+            }
+            else if (FileHost(uri)) _ = DownloadUrl(uri);   // a Bale file must be saved, not replace the app
+            else if (TrustedUrl(session.Core.Source) && Links.External(uri) && openLimiter.Allow(uri)) OpenExternal(uri);
+        }
+
         void NavigationStarting(Session session, CoreWebView2NavigationStartingEventArgs e)
         {
             var uri = e.Uri;
             if (TrustedUrl(uri) || uri.StartsWith("blob:") || uri.StartsWith("data:") || uri == "about:blank") return;
-            e.Cancel = true;
-            if (FileHost(uri)) _ = DownloadUrl(uri);   // a Bale file must be saved, not replace the app
-            else if (e.IsUserInitiated) OpenExternal(uri);
+            e.Cancel = true;   // outside pages never replace Bale
+            RouteLink(session, uri);
         }
 
-        void NewWindowRequested(CoreWebView2NewWindowRequestedEventArgs e)
+        void NewWindowRequested(Session session, CoreWebView2NewWindowRequestedEventArgs e)
         {
             e.Handled = true;   // never open a second, unmanaged browser window
-            if (FileHost(e.Uri)) _ = DownloadUrl(e.Uri);
-            else if (e.IsUserInitiated && !TrustedUrl(e.Uri)) OpenExternal(e.Uri);
+            RouteLink(session, e.Uri);
+        }
+
+        /// <summary>bale:// and ble.ir links handed over by Windows (browser, other apps).</summary>
+        public void OpenFromOs(string uri)
+        {
+            var target = Links.BaleLinkTarget(uri);
+            if (target == null) return;
+            ShowMain();
+            if (sessions.TryGetValue(profiles.Active, out var session) && session.Core != null) session.Core.Navigate(target);
+            else pendingLink = target;
+        }
+
+        public static string LinkQueuePath => Path.Combine(DataRootPath, "open-links.txt");
+
+        /// <summary>Links a second launch (e.g. a clicked bale:// link) passed to this instance.</summary>
+        public void OpenQueuedLinks()
+        {
+            string[] queued;
+            try
+            {
+                queued = File.ReadAllLines(LinkQueuePath);
+                File.Delete(LinkQueuePath);
+            }
+            catch (Exception error) when (error is IOException || error is UnauthorizedAccessException) { return; }
+            foreach (var link in queued.Take(5)) OpenFromOs(link.Trim());
         }
 
         // ---------- downloads ----------

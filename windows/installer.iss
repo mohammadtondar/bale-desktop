@@ -41,6 +41,15 @@ Name: "{userprograms}\Bale Desktop"; Filename: "{app}\BaleDesktop.exe"
 Name: "{userdesktop}\Bale Desktop"; Filename: "{app}\BaleDesktop.exe"; Tasks: desktopicon
 
 [Registry]
+; bale:// and ble:// links (the "open in app" links on ble.ir pages) open Bale Desktop.
+Root: HKCU; Subkey: "Software\Classes\bale"; ValueType: string; ValueName: ""; ValueData: "URL:Bale"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\bale"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\bale\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\BaleDesktop.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\bale\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\BaleDesktop.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\ble"; ValueType: string; ValueName: ""; ValueData: "URL:Bale"; Flags: uninsdeletekey
+Root: HKCU; Subkey: "Software\Classes\ble"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
+Root: HKCU; Subkey: "Software\Classes\ble\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: """{app}\BaleDesktop.exe"",0"
+Root: HKCU; Subkey: "Software\Classes\ble\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\BaleDesktop.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "BaleDesktop"; ValueData: """{app}\BaleDesktop.exe"" --background"; Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
