@@ -16,6 +16,7 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 from gi.repository import Gdk, Gio, GLib, Gtk, WebKit2
 from . import __version__, links, updater
+from .media import MediaBridge
 from .national import NationalProxy
 from .profiles import ProfileStore
 
@@ -132,6 +133,7 @@ class BaleApplication(Gtk.Application):
         self.download_names = {}
         self.pending_navigations = set()
         self.open_limiter = links.OpenLimiter()
+        self.media = MediaBridge(self.javascript)
         self.bridge_source = None
         self.held = False
         self.national = None
@@ -358,6 +360,7 @@ class BaleApplication(Gtk.Application):
         view.connect('web-process-terminated', self.process_terminated)
         view.connect('create', self.new_web_window)
         context.connect('download-started', self.download_started)
+        self.media.attach(context, view)   # drop / paste photos, videos and files
         self.stack.add_named(view, profile_id)
         view.show()
         if self.demo:
