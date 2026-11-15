@@ -37,7 +37,7 @@ namespace BaleDesktop
         readonly Dictionary<string, Session> sessions = new Dictionary<string, Session>();
         readonly HashSet<string> notified = new HashSet<string>();
         readonly Queue<string> notifiedOrder = new Queue<string>();
-        readonly string bridge, themeScript;
+        readonly string bridge, themeScript, notificationScript;
         Task<CoreWebView2Environment> environment;
         readonly bool nationalOn;
         NationalProxy national;
@@ -73,6 +73,9 @@ namespace BaleDesktop
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("theme.js"))
             using (var reader = new StreamReader(stream))
                 themeScript = reader.ReadToEnd();
+            using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("notifications.js"))
+            using (var reader = new StreamReader(stream))
+                notificationScript = reader.ReadToEnd();
             using (var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("bale.ico"))
                 Icon = new Icon(stream);
 
@@ -147,9 +150,11 @@ namespace BaleDesktop
                 e.Cancel = true;
                 Hide();
                 UpdateBackground();
-                if (!hiddenTipShown)
+                // Explain the tray once, not after every start of the app.
+                if (!hiddenTipShown && !(LoadSettings().TryGetValue("tray_tip_shown", out var shown) && shown is bool seen && seen))
                 {
                     hiddenTipShown = true;
+                    SaveSetting("tray_tip_shown", true);
                     Balloon("بله در پس‌زمینه فعال است", "برای خروج کامل از منوی آیکون کنار ساعت استفاده کنید.", ShowMain);
                 }
                 return;
@@ -350,6 +355,7 @@ namespace BaleDesktop
 
             await core.AddScriptToExecuteOnDocumentCreatedAsync(bridge);
             await core.AddScriptToExecuteOnDocumentCreatedAsync(themeScript);
+            await core.AddScriptToExecuteOnDocumentCreatedAsync(notificationScript);
             core.WebMessageReceived += (s, e) => BridgeMessage(session, e);
             core.NavigationStarting += (s, e) => NavigationStarting(session, e);
             core.NavigationCompleted += (s, e) =>
@@ -674,7 +680,7 @@ namespace BaleDesktop
         {
             toast.Visible = false;
             toast.BackColor = Color.FromArgb(0, 40, 33);
-            toast.Padding = new Padding(10, 6, 10, 6);
+            toast.Padding = new Padding(S(10), S(6), S(10), S(6));
             toast.Size = new Size(S(340), S(36));
             toastText.AutoEllipsis = true;
             toastText.ForeColor = Color.White;

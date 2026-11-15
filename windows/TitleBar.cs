@@ -47,7 +47,30 @@ namespace BaleDesktop
         ToolStripMenuItem modeAuto, modeGreen;
         MenuRenderer menuRenderer;
 
-        int S(int value) => (int)Math.Round(value * DeviceDpi / 96f);
+        [DllImport("user32.dll")] static extern int GetDpiForSystem();
+
+        // Control.DeviceDpi stays 96 on .NET Framework unless WinForms runs in
+        // PerMonitorV2 mode, while fonts (in points) do follow the real DPI: at
+        // 150% the bar kept 100% sizes around 150% text. Ask Windows instead.
+        int dpi;
+        int Dpi
+        {
+            get
+            {
+                if (dpi == 0)
+                {
+                    try { dpi = GetDpiForSystem(); }
+                    catch (EntryPointNotFoundException)   // before Windows 10 1607
+                    {
+                        using (var g = Graphics.FromHwnd(IntPtr.Zero)) dpi = (int)Math.Round(g.DpiX);
+                    }
+                    if (dpi <= 0) dpi = 96;
+                }
+                return dpi;
+            }
+        }
+
+        int S(int value) => (int)Math.Round(value * Dpi / 96f);
 
         // ---------- the bar ----------
 
@@ -142,6 +165,9 @@ namespace BaleDesktop
             dropDown.Renderer = menuRenderer;
             dropDown.RightToLeft = direction;
             dropDown.Padding = new Padding(S(4));
+            // A drop-down inherits its owner's font: the ☰ button's is the icon font,
+            // which drew Persian with fallback glyphs and broken joins.
+            dropDown.Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 9.5f);
             if (dropDown is ToolStripDropDownMenu menu) menu.ShowCheckMargin = false;
         }
 
@@ -307,6 +333,8 @@ namespace BaleDesktop
             foreach (ToolStripItem item in dropDown.Items)
             {
                 if (!(item is ToolStripLabel)) item.ForeColor = menuFore;
+                if (item is ToolStripMenuItem plain && plain.Padding.Vertical == 0)
+                    plain.Padding = new Padding(0, S(5), 0, S(5));   // roomier rows, like Bale's own menus
                 if (item is ToolStripMenuItem sub && sub.HasDropDownItems) ApplyMenuColors(sub.DropDown);
             }
         }
@@ -415,7 +443,12 @@ namespace BaleDesktop
                     e.Graphics.DrawRectangle(pen, 0, 0, e.ToolStrip.Width - 1, e.ToolStrip.Height - 1);
             }
 
-            protected override void OnRenderImageMargin(ToolStripRenderEventArgs e) { }
+            // The margin behind item images is painted separately; left empty it showed
+            // as a white strip next to the avatars in a dark menu.
+            protected override void OnRenderImageMargin(ToolStripRenderEventArgs e)
+            {
+                using (var brush = new SolidBrush(form.menuBack)) e.Graphics.FillRectangle(brush, e.AffectedBounds);
+            }
 
             protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e)
             {

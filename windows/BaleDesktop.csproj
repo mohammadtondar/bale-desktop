@@ -34,6 +34,7 @@
     <!-- The same read-only notification/download adapter as the Linux build. -->
     <EmbeddedResource Include="..\bale_desktop\bridge.js" LogicalName="bridge.js" />
     <EmbeddedResource Include="theme.js" LogicalName="theme.js" />
+    <EmbeddedResource Include="notifications.js" LogicalName="notifications.js" />
     <EmbeddedResource Include="bale.ico" LogicalName="bale.ico" />
   </ItemGroup>
 </Project>
